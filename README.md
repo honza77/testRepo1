@@ -19,14 +19,24 @@ $cred = Get-Credential
 # List installed MSIs (nothing is uninstalled), optionally filtered
 .\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -ListInstalled
 .\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -ListInstalled -Filter contoso,agent
+.\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -ListInstalled -FilterMode Wildcard -Filter '*Visual C++ 20??*'
+.\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -ListInstalled -FilterMode Regex -Filter '^Contoso (Agent|Monitor)'
 ```
 
 ### Listing / searching installed MSIs
 
 `-ListInstalled` connects to the servers and lists the installed MSI products (name, version,
 publisher, product code, 32/64-bit) on screen and to `.\MsiInventory_<timestamp>.csv`.
-`-Filter` takes one or more plain substrings (case-insensitive, no wildcards or regex); a product is
-shown if its name, publisher or product code contains any of them. Use it to find the exact names or
+`-Filter` takes one or more patterns; a product is shown if its name, publisher or product code
+matches any of them. All modes are case-insensitive. `-FilterMode` picks how patterns are read:
+
+| `-FilterMode` | Meaning | Example |
+|---|---|---|
+| `Substring` (default) | Plain text, field must contain it | `contoso` |
+| `Wildcard` | PowerShell `-like` (`*`, `?`, `[a-z]`); must match the **whole** field | `*Visual C++ 20??*` |
+| `Regex` | .NET regular expression, matches anywhere unless anchored | `^Contoso (Agent\|Monitor)` |
+
+Invalid wildcard/regex patterns are rejected before any server is contacted. Use it to find the exact names or
 product codes for your MSI list file.
 
 Inline parameters and files can be combined; lists are merged and de-duplicated.
@@ -38,7 +48,8 @@ Inline parameters and files can be combined; lists are merged and de-duplicated.
 | `-MsiName` | MSI display names (wildcards OK) or product code GUIDs |
 | `-MsiListPath` | Text file, one MSI name/GUID per line |
 | `-ListInstalled` | List installed MSIs instead of uninstalling |
-| `-Filter` | Substring(s) to search for in list mode (matches name, publisher or product code) |
+| `-Filter` | Pattern(s) to search for in list mode (matches name, publisher or product code) |
+| `-FilterMode` | `Substring` (default), `Wildcard` or `Regex` |
 | `-Credential` | Credentials; prompted if omitted |
 | `-UseSSL` | Use WinRM over HTTPS |
 | `-ThrottleLimit` | Parallel servers (default 16) |

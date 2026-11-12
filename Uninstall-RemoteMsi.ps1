@@ -42,9 +42,17 @@
     -MsiName / -MsiListPath are not needed in this mode.
 
 .PARAMETER Filter
-    Used with -ListInstalled. One or more plain-text substrings (case-insensitive,
-    no wildcards / regex). A product is listed if its DisplayName, Publisher or
-    ProductCode contains ANY of the given substrings.
+    Used with -ListInstalled. One or more search patterns (case-insensitive).
+    A product is listed if its DisplayName, Publisher or ProductCode matches ANY
+    of the patterns. How the patterns are interpreted is set by -FilterMode.
+
+.PARAMETER FilterMode
+    How -Filter patterns are interpreted:
+      Substring (default) - plain text, the field must CONTAIN it. No special characters.
+      Wildcard            - PowerShell -like pattern (* ? [a-z]). Must match the WHOLE
+                            field, so use e.g. '*agent*' to search anywhere in the name.
+      Regex               - .NET regular expression (-match), matches anywhere unless
+                            anchored with ^ / $.
 
 .PARAMETER Credential
     Credentials used to connect to the servers. If omitted you will be prompted.
@@ -86,6 +94,16 @@
     Lists installed MSI products whose name, publisher or product code contains
     "contoso" or "agent". Nothing is uninstalled.
 
+.EXAMPLE
+    .\Uninstall-RemoteMsi.ps1 -ComputerName SRV01 -ListInstalled -FilterMode Wildcard -Filter 'Microsoft Visual C++ 20?? *'
+
+    Wildcard search.
+
+.EXAMPLE
+    .\Uninstall-RemoteMsi.ps1 -ComputerName SRV01 -ListInstalled -FilterMode Regex -Filter '^Contoso (Agent|Monitor)\b'
+
+    Regular expression search.
+
 .NOTES
     Requirements:
       * PowerShell Remoting (WinRM) enabled on the target servers.
@@ -107,6 +125,9 @@ param(
     [switch] $ListInstalled,
 
     [string[]] $Filter,
+
+    [ValidateSet('Substring', 'Wildcard', 'Regex')]
+    [string] $FilterMode = 'Substring',
 
     [System.Management.Automation.PSCredential]
     [System.Management.Automation.Credential()]
@@ -178,6 +199,24 @@ if ($servers.Count -eq 0) { throw 'No servers specified. Use -ComputerName and/o
 if ($msis.Count -eq 0 -and -not $ListInstalled) { throw 'No MSIs specified. Use -MsiName and/or -MsiListPath (or -ListInstalled to list installed MSIs).' }
 if ($Filter -and -not $ListInstalled) { Write-Warning '-Filter is only used together with -ListInstalled; ignoring it.' }
 
+# Validate filter patterns up front so a typo fails before connecting anywhere
+if ($ListInstalled -and $Filter) {
+    foreach ($f in $Filter) {
+        if (-not $f -or -not $f.Trim()) { continue }
+        try {
+            switch ($FilterMode) {
+                'Regex'    { [void][regex]::new($f.Trim(), 'IgnoreCase') }
+                'Wildcard' { [void][System.Management.Automation.WildcardPattern]::new($f.Trim(), 'IgnoreCase').IsMatch('') }
+            }
+        }
+        catch {
+            $ex = $_.Exception
+            if ($ex.InnerException) { $ex = $ex.InnerException }
+            throw "Invalid $FilterMode filter '$f': $($ex.Message)"
+        }
+    }
+}
+
 if (-not $ReportPath) {
     $prefix = if ($ListInstalled) { 'MsiInventory' } else { 'MsiUninstallReport' }
     $ReportPath = Join-Path -Path (Get-Location) -ChildPath ("{0}_{1:yyyyMMdd_HHmmss}.csv" -f $prefix, (Get-Date))
@@ -202,12 +241,12 @@ if ($ListInstalled) {
 
     Write-Host ''
     Write-Host ("Servers ({0}): {1}" -f $servers.Count, ($servers -join ', ')) -ForegroundColor Cyan
-    if ($filters.Count) { Write-Host ("Filter (substring, any of): {0}" -f ($filters -join ', ')) -ForegroundColor Cyan }
+    if ($filters.Count) { Write-Host ("Filter ({0}, any of): {1}" -f $FilterMode.ToLower(), ($filters -join ', ')) -ForegroundColor Cyan }
     else                { Write-Host 'Filter: none (listing all MSI products)' -ForegroundColor Cyan }
     Write-Host ''
 
     $listScript = {
-        param([string[]] $Filters)
+        param([string[]] $Filters, [string] $Mode)
         $guidPattern = '^\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?$'
         $keys = @(
             @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*';             Arch = '64-bit' },
@@ -237,7 +276,14 @@ if ($ListInstalled) {
                 $hit = $false
                 foreach ($f in $Filters) {
                     foreach ($field in @($p.DisplayName, $p.Publisher, $p.ProductCode)) {
-                        if ($field -and ([string]$field).IndexOf($f, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $hit = $true; break }
+                        if (-not $field) { continue }
+                        $text = [string]$field
+                        $isMatch = switch ($Mode) {
+                            'Wildcard' { $text -like $f }     # -like / -match are case-insensitive
+                            'Regex'    { $text -match $f }
+                            default    { $text.IndexOf($f, [StringComparison]::OrdinalIgnoreCase) -ge 0 }
+                        }
+                        if ($isMatch) { $hit = $true; break }
                     }
                     if ($hit) { break }
                 }
@@ -249,7 +295,7 @@ if ($ListInstalled) {
 
     Write-Host 'Connecting to servers and collecting installed MSIs...' -ForegroundColor Cyan
     $remoteErrors = @()
-    $inventory = @(Invoke-Command @connParams -ScriptBlock $listScript -ArgumentList (, $filters) -ErrorVariable remoteErrors |
+    $inventory = @(Invoke-Command @connParams -ScriptBlock $listScript -ArgumentList $filters, $FilterMode -ErrorVariable remoteErrors |
         Select-Object ComputerName, DisplayName, Version, Publisher, InstallDate, Architecture, ProductCode)
 
     $failed = @(ConvertFrom-RemoteError -ErrorRecords $remoteErrors)
