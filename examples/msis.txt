@@ -1,0 +1,5 @@
+# One MSI per line: either a display name (wildcards allowed) or a product code GUID.
+# Lines starting with # are ignored.
+Contoso Monitoring Agent
+Fabrikam Backup Client*
+{12345678-90AB-CDEF-1234-567890ABCDEF}

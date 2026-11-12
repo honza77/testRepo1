@@ -1,0 +1,4 @@
+# One server host name per line. Lines starting with # are ignored.
+SRV-APP01
+SRV-APP02
+srv-web01.contoso.local
