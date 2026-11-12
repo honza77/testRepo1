@@ -8,6 +8,7 @@ open System.Management.Automation.Runspaces
 open MsiRemoteUninstall.Domain
 open MsiRemoteUninstall.Cli
 open MsiRemoteUninstall.Transport
+open MsiRemoteUninstall.Errors
 
 let private inventoryScript =
     """
@@ -39,9 +40,14 @@ let private uninstallScript =
     """
 param([string] $ProductCode, [string] $LogFolder, [string] $LogFile)
 $ErrorActionPreference = 'Stop'
-if (-not (Test-Path -LiteralPath $LogFolder)) { New-Item -ItemType Directory -Path $LogFolder -Force | Out-Null }
-$msiArgs = @('/x', $ProductCode, '/qn', '/norestart', '/l*v', "`"$LogFile`"")
-$p = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru -WindowStyle Hidden
+try {
+    if (-not (Test-Path -LiteralPath $LogFolder)) { New-Item -ItemType Directory -Path $LogFolder -Force | Out-Null }
+    $msiArgs = @('/x', $ProductCode, '/qn', '/norestart', '/l*v', "`"$LogFile`"")
+    $p = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru -WindowStyle Hidden
+}
+catch {
+    throw "MRU402: $($_.Exception.Message)"
+}
 $p.ExitCode
 """
 
@@ -88,7 +94,8 @@ type PsRemotingSession(computer: string, settings: ConnectionSettings) =
     let runspace = RunspaceFactory.CreateRunspace(connectionInfo)
     do runspace.Open()
 
-    let invoke (timeout: TimeSpan) (script: string) (parameters: (string * obj) list) : PSObject list =
+    /// Runs a script remotely; raises `timeoutCode` if it does not finish in time.
+    let invoke (timeoutCode: string) (timeout: TimeSpan) (script: string) (parameters: (string * obj) list) : PSObject list =
         use ps = PowerShell.Create()
         ps.Runspace <- runspace
         ps.AddScript(script) |> ignore
@@ -97,12 +104,12 @@ type PsRemotingSession(computer: string, settings: ConnectionSettings) =
         let ar = ps.BeginInvoke()
         if not (ar.AsyncWaitHandle.WaitOne timeout) then
             (try ps.Stop() with _ -> ())
-            raise (TimeoutException(sprintf "Remote command did not finish within %O." timeout))
+            raiseMru timeoutCode (sprintf "Remote command did not finish within %.0f minute(s)." timeout.TotalMinutes)
         ps.EndInvoke(ar) |> List.ofSeq
 
     let remoteName =
         try
-            match invoke (TimeSpan.FromMinutes 2.0) "$env:COMPUTERNAME" [] with
+            match invoke "MRU310" (TimeSpan.FromMinutes 2.0) "$env:COMPUTERNAME" [] with
             | o :: _ when not (isNull o) && string o <> "" -> string o
             | _ -> computer
         with _ -> computer
@@ -111,7 +118,7 @@ type PsRemotingSession(computer: string, settings: ConnectionSettings) =
         member _.ComputerName = remoteName
 
         member _.GetInstalledProducts() =
-            invoke (TimeSpan.FromMinutes 5.0) inventoryScript []
+            invoke "MRU401" (TimeSpan.FromMinutes 5.0) inventoryScript []
             |> Seq.filter (fun o -> not (isNull o))
             |> Seq.map (fun o ->
                 { ProductCode = (prop o "ProductCode").ToUpperInvariant()
@@ -125,6 +132,7 @@ type PsRemotingSession(computer: string, settings: ConnectionSettings) =
         member _.Uninstall(productCode, logFolder, logFile) =
             let result =
                 invoke
+                    "MRU403"
                     settings.Timeout
                     uninstallScript
                     [ "ProductCode", box productCode; "LogFolder", box logFolder; "LogFile", box logFile ]
@@ -132,8 +140,8 @@ type PsRemotingSession(computer: string, settings: ConnectionSettings) =
             | Some o when not (isNull o) ->
                 match Int32.TryParse(string o) with
                 | true, code -> code
-                | _ -> failwithf "Unexpected result from remote msiexec: '%O'" o
-            | _ -> failwith "No exit code returned from remote msiexec."
+                | _ -> raiseMru "MRU404" (sprintf "Unexpected result from remote msiexec: '%O'" o)
+            | _ -> raiseMru "MRU404" "The remote command returned no exit code."
 
         member _.Dispose() =
             (try runspace.Close() with _ -> ())

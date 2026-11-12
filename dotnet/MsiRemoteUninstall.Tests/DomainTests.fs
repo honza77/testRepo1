@@ -124,5 +124,21 @@ let ``readListFile fails for missing file`` () =
 [<InlineData(1603, "Failed")>]
 [<InlineData(1618, "Failed")>]
 let ``msiexec exit codes are interpreted`` (code: int, expected: string) =
-    let status, _ = interpretExitCode code
+    let status, _, _ = interpretExitCode code
     Assert.Equal(expected, string status)
+
+[<Theory>]
+[<InlineData(0, "")>]
+[<InlineData(3010, "MSI3010")>]
+[<InlineData(1603, "MSI1603")>]
+[<InlineData(1612, "MSI1612")>]
+[<InlineData(4242, "MSI-OTHER")>]
+let ``msiexec exit codes map to catalog codes`` (code: int, expected: string) =
+    let _, _, errorCode = interpretExitCode code
+    Assert.Equal(expected, errorCode)
+
+[<Fact>]
+let ``missing list file raises MRU104`` () =
+    match Assert.ThrowsAny<exn>(fun () -> readListFile "does-not-exist.txt" |> ignore) with
+    | MsiRemoteUninstall.Errors.MruException(code, _) -> Assert.Equal("MRU104", code)
+    | other -> failwithf "Unexpected exception %O" other

@@ -6,6 +6,7 @@ open System
 open System.IO
 open System.Text
 open System.Text.RegularExpressions
+open MsiRemoteUninstall.Errors
 
 [<RequireQualifiedAccess>]
 type FilterMode =
@@ -42,6 +43,7 @@ type UninstallResult =
       ProductCode: string
       Status: UninstallStatus
       ExitCode: int option
+      ErrorCode: string
       Message: string
       LogFile: string }
 
@@ -49,15 +51,21 @@ type UninstallResult =
 type InventoryRow =
     { ComputerName: string
       Product: InstalledProduct option
-      Error: string option }
+      /// (error code, message) when the server could not be queried
+      Error: (string * string) option }
 
 // ---------------------------------------------------------------- list files
 
 /// Reads a list file: one entry per line, blank lines and '#' comments ignored.
 let readListFile (path: string) : string list =
     if not (File.Exists path) then
-        failwithf "List file not found: %s" path
-    File.ReadAllLines path
+        raiseMru "MRU104" (sprintf "%s (current directory: %s)" path Environment.CurrentDirectory)
+    let lines =
+        try
+            File.ReadAllLines path
+        with ex ->
+            raiseMru "MRU105" (sprintf "%s: %s" path ex.Message)
+    lines
     |> Seq.map (fun l -> l.Trim())
     |> Seq.filter (fun l -> l <> "" && not (l.StartsWith "#"))
     |> List.ofSeq
@@ -139,16 +147,15 @@ let findProducts (installed: InstalledProduct list) (msi: string) : InstalledPro
 
 // ---------------------------------------------------------------- msiexec exit codes
 
-let interpretExitCode (code: int) : UninstallStatus * string =
+/// Maps an msiexec exit code to status, message and error-catalog code ("" for plain success).
+let interpretExitCode (code: int) : UninstallStatus * string * string =
+    let describe () = (Errors.get (Errors.msiCode code)).Title
     match code with
-    | 0 -> Success, "Uninstalled successfully."
-    | 3010 -> SuccessRebootRequired, "Uninstalled; reboot required."
-    | 1641 -> SuccessRebootInitiated, "Uninstalled; reboot initiated."
-    | 1605 -> NotInstalled, "Product is not installed."
-    | 1618 -> Failed, "Another installation is in progress."
-    | 1603 -> Failed, "Fatal error during uninstall (1603). See log."
-    | 1602 -> Failed, "Uninstall cancelled (1602)."
-    | c -> Failed, sprintf "msiexec returned %d. See log." c
+    | 0 -> Success, "Uninstalled successfully.", ""
+    | 3010 -> SuccessRebootRequired, "Uninstalled; reboot required.", "MSI3010"
+    | 1641 -> SuccessRebootInitiated, "Uninstalled; reboot initiated.", "MSI1641"
+    | 1605 -> NotInstalled, "Product is not installed.", "MSI1605"
+    | c -> Failed, sprintf "msiexec exit code %d: %s." c (describe ()), Errors.msiCode c
 
 let isFailure status =
     match status with

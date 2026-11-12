@@ -3,6 +3,7 @@ module MsiRemoteUninstall.Credentials
 
 open System
 open System.Security
+open MsiRemoteUninstall.Errors
 
 /// User name + password. None = use the current Windows logon.
 type Credential = { UserName: string; Password: SecureString }
@@ -47,8 +48,7 @@ let readPassword (prompt: string) : SecureString =
         pwd.MakeReadOnly()
         pwd
 
-/// Resolves credentials from options: current user, env var, or console prompt.
-let obtain (userName: string option) (passwordEnvVar: string option) (currentUser: bool) : Credential option =
+let private obtainCore (userName: string option) (passwordEnvVar: string option) (currentUser: bool) : Credential option =
     if currentUser then
         None
     else
@@ -65,15 +65,23 @@ let obtain (userName: string option) (passwordEnvVar: string option) (currentUse
                 let l = Console.ReadLine()
                 if isNull l then "" else l.Trim()
         if user = "" then
-            failwith "No user name supplied."
+            raiseMru "MRU201" "The user name was empty."
         let password =
             match passwordEnvVar with
             | Some var ->
                 match Environment.GetEnvironmentVariable var with
                 | null
-                | "" -> failwithf "Environment variable '%s' is not set or empty." var
+                | "" -> raiseMru "MRU203" (sprintf "Environment variable '%s' is not set or empty." var)
                 | v -> toSecure v
             | None -> readPassword (sprintf "Password for %s" user)
         if password.Length = 0 then
-            failwith "No password supplied."
+            raiseMru "MRU202" "The password was empty."
         Some { UserName = user; Password = password }
+
+/// Resolves credentials from options: current user, env var, or console prompt.
+let obtain (userName: string option) (passwordEnvVar: string option) (currentUser: bool) : Credential option =
+    try
+        obtainCore userName passwordEnvVar currentUser
+    with
+    | :? InvalidOperationException as ex -> raiseMru "MRU204" ex.Message // Console.ReadKey without a console
+    | :? IO.IOException as ex -> raiseMru "MRU204" ex.Message

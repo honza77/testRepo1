@@ -3,6 +3,7 @@ module MsiRemoteUninstall.Cli
 
 open System
 open MsiRemoteUninstall.Domain
+open MsiRemoteUninstall.Errors
 
 [<RequireQualifiedAccess>]
 type Transport =
@@ -41,7 +42,12 @@ type Options =
       ReportPath: string option
       RemoteLogFolder: string
       TimeoutMinutes: int
-      ShowHelp: bool }
+      SkipPreflight: bool
+      ShowHelp: bool
+      /// --errors [text|markdown|json]
+      ListErrors: string option
+      /// --explain <code>
+      Explain: string option }
 
 let defaults =
     { Computers = []
@@ -65,7 +71,10 @@ let defaults =
       ReportPath = None
       RemoteLogFolder = @"C:\Windows\Temp\MsiUninstallLogs"
       TimeoutMinutes = 60
-      ShowHelp = false }
+      SkipPreflight = false
+      ShowHelp = false
+      ListErrors = None
+      Explain = None }
 
 let usage =
     """
@@ -102,6 +111,7 @@ CONNECTION
       --auth <mode>            psremoting only: default | negotiate | kerberos | credssp | basic
       --throttle <n>           Servers processed in parallel (default 16).
       --timeout <minutes>      Max time to wait for one msiexec run (default 60).
+      --skip-preflight         Skip the DNS + TCP port check done before connecting.
 
 CREDENTIALS (prompted in the console by default)
   -u, --user <DOMAIN\user>     User name; only the password is then prompted.
@@ -113,10 +123,22 @@ BEHAVIOUR
   -y, --yes                    Do not ask for confirmation before uninstalling.
       --report <file.csv>      CSV report path (default .\MsiUninstallReport_<ts>.csv / MsiInventory_<ts>.csv).
       --remote-log-folder <p>  msiexec log folder on servers (default C:\Windows\Temp\MsiUninstallLogs).
+
+HELP
   -h, --help                   Show this help.
+      --errors [format]        List all error codes. format: text (default) | markdown | json
+      --explain <code>         Explain an error code and how to fix it, e.g. --explain MRU303
+                               or --explain 1603 (msiexec exit code).
 
 List files: blank lines and lines starting with '#' are ignored.
-Exit code: 0 = everything OK, 1 = at least one failure, 2 = invalid arguments.
+Every problem is reported with an error code (MRU### or MSI####) in the console and in the
+ErrorCode column of the CSV report; a summary with remediation hints is printed at the end.
+
+EXIT CODES
+  0  success                      4  aborted at the confirmation question
+  1  at least one failure         5  no server could be reached
+  2  invalid arguments / input    6  unexpected internal error
+  3  credential problem           10 success, but a reboot is required
 
 EXAMPLES
   MsiRemoteUninstall --computer-list servers.txt --msi-list msis.txt
@@ -124,30 +146,29 @@ EXAMPLES
   MsiRemoteUninstall -c SRV01 --list --filter-mode regex -f "^Contoso (Agent|Monitor)" -u CONTOSO\admin
   MsiRemoteUninstall --computer-list servers.txt --msi-list msis.txt -t psremoting --ssl -y
   MsiRemoteUninstall --computer-list servers.txt -m {12345678-90AB-CDEF-1234-567890ABCDEF} -t wmi
+  MsiRemoteUninstall --explain MRU307
 """
-
-exception CliError of string
 
 let private parseEnum name (map: (string * 'T) list) (value: string) =
     match map |> List.tryFind (fun (k, _) -> String.Equals(k, value, StringComparison.OrdinalIgnoreCase)) with
     | Some(_, v) -> v
-    | None -> raise (CliError(sprintf "Invalid value '%s' for %s. Allowed: %s" value name (map |> List.map fst |> String.concat ", ")))
+    | None -> raiseMru "MRU101" (sprintf "Invalid value '%s' for %s. Allowed: %s" value name (map |> List.map fst |> String.concat ", "))
 
 let private parseInt name (value: string) min max =
     match Int32.TryParse value with
     | true, v when v >= min && v <= max -> v
-    | _ -> raise (CliError(sprintf "Invalid value '%s' for %s (expected %d-%d)." value name min max))
+    | _ -> raiseMru "MRU101" (sprintf "Invalid value '%s' for %s (expected %d-%d)." value name min max)
 
 let private splitComma (s: string) =
     s.Split([| ',' |], StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries) |> List.ofArray
 
-/// Parses argv. Raises CliError on invalid input.
+/// Parses argv. Raises MruException MRU101 on invalid input.
 let parse (argv: string[]) : Options =
     let rec loop (o: Options) (args: string list) =
         let needValue name rest =
             match rest with
             | v :: tail when not (String.IsNullOrEmpty v) -> v, tail
-            | _ -> raise (CliError(sprintf "Missing value for %s." name))
+            | _ -> raiseMru "MRU101" (sprintf "Missing value for %s." name)
         match args with
         | [] -> o
         | a :: rest ->
@@ -214,6 +235,15 @@ let parse (argv: string[]) : Options =
             | "--remote-log-folder" ->
                 let v, t = needValue a rest
                 loop { o with RemoteLogFolder = v.TrimEnd('\\') } t
-            | _ -> raise (CliError(sprintf "Unknown argument '%s'. Use --help for usage." a))
+            | "--skip-preflight" -> loop { o with SkipPreflight = true } rest
+            | "--errors" ->
+                match rest with
+                | f :: t when List.contains (f.ToLowerInvariant()) [ "text"; "markdown"; "md"; "json" ] ->
+                    loop { o with ListErrors = Some(f.ToLowerInvariant()) } t
+                | _ -> loop { o with ListErrors = Some "text" } rest
+            | "--explain" ->
+                let v, t = needValue a rest
+                loop { o with Explain = Some v } t
+            | _ -> raiseMru "MRU101" (sprintf "Unknown argument '%s'. Use --help for usage." a)
 
     loop defaults (List.ofArray argv)

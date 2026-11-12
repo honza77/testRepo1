@@ -14,6 +14,7 @@ open System.Management
 open System.Threading
 open MsiRemoteUninstall.Domain
 open MsiRemoteUninstall.Transport
+open MsiRemoteUninstall.Errors
 
 let private HKLM = 0x80000002u
 let private statusKey = @"SOFTWARE\MsiRemoteUninstall\ExitCodes"
@@ -128,20 +129,28 @@ type WmiSession(computer: string, settings: ConnectionSettings) =
                 use out = processClass.InvokeMethod("Create", inParams, null)
                 match u32 out.["ReturnValue"] with
                 | 0u -> u32 out.["ProcessId"]
-                | 2u -> failwith "Win32_Process.Create: access denied."
-                | rv -> failwithf "Win32_Process.Create failed with code %d." rv
+                | rv ->
+                    let reason =
+                        match rv with
+                        | 2u -> "access denied"
+                        | 3u -> "insufficient privilege"
+                        | 8u -> "unknown failure"
+                        | 9u -> "path not found"
+                        | 21u -> "invalid parameter"
+                        | _ -> "unexpected return value"
+                    raiseMru "MRU402" (sprintf "Win32_Process.Create returned %d (%s)." rv reason)
 
             let deadline = DateTime.UtcNow + settings.Timeout
             while isProcessRunning pid && DateTime.UtcNow < deadline do
                 Thread.Sleep(TimeSpan.FromSeconds 5.0)
             if isProcessRunning pid then
-                raise (TimeoutException(sprintf "msiexec (via cmd PID %d) still running after %O." pid settings.Timeout))
+                raiseMru "MRU403" (sprintf "msiexec (cmd.exe PID %d) still running after %.0f minute(s); it was left running." pid settings.Timeout.TotalMinutes)
 
             let value = getString statusKey valueName
             (try deleteValue statusKey valueName with _ -> ())
             match Int32.TryParse value with
             | true, code -> code
-            | _ -> failwithf "Could not read msiexec exit code from HKLM\\%s\\%s." statusKey valueName
+            | _ -> raiseMru "MRU404" (sprintf "No exit code found in HKLM\\%s\\%s." statusKey valueName)
 
         member _.Dispose() =
             regProv.Dispose()

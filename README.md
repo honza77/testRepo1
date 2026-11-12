@@ -2,6 +2,22 @@
 
 PowerShell script that uninstalls MSI products from a list of remote Windows servers.
 
+**Version 2** of the script, `Uninstall-RemoteMsi.v2.ps1`, sits beside the original. It reports every
+problem with an error code, an explanation and remediation steps (see [ERROR-CODES.md](ERROR-CODES.md)):
+
+```powershell
+.\Uninstall-RemoteMsi.v2.ps1 -ComputerListPath .\servers.txt -MsiListPath .\msis.txt
+.\Uninstall-RemoteMsi.v2.ps1 -ListErrorCodes          # all error codes + process exit codes
+.\Uninstall-RemoteMsi.v2.ps1 -ExplainError MRU303     # explanation and fixes for one code
+Get-Help .\Uninstall-RemoteMsi.v2.ps1 -Full
+```
+
+Additional v2 parameters: `-TimeoutMinutes`, `-Port`, `-Authentication`, `-SkipCertificateCheck`, `-SkipPreflight`.
+v2 also checks DNS and the WinRM TCP port before connecting, prints a summary of the codes found with
+fixes, adds an `ErrorCode` column to the CSV report, and sets process exit codes (0 OK, 1 partial
+failure, 2 invalid input, 3 credentials, 4 aborted, 5 no server reachable, 6 internal error,
+10 OK but reboot required).
+
 An F# / .NET 8 console version with the same features (WinRM, WinRM over HTTPS, or WMI/DCOM transport)
 is in [`dotnet/`](dotnet/README.md).
 

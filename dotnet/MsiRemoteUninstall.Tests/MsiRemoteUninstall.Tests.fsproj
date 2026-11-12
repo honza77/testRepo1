@@ -8,6 +8,7 @@
   <ItemGroup>
     <Compile Include="DomainTests.fs" />
     <Compile Include="CliTests.fs" />
+    <Compile Include="ErrorsTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

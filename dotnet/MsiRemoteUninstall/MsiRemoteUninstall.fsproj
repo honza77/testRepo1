@@ -12,13 +12,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Errors.fs" />
     <Compile Include="Domain.fs" />
     <Compile Include="Cli.fs" />
     <Compile Include="Credentials.fs" />
     <Compile Include="Report.fs" />
     <Compile Include="Transport.fs" />
+    <Compile Include="Preflight.fs" />
     <Compile Include="PsRemotingTransport.fs" />
     <Compile Include="WmiTransport.fs" />
+    <Compile Include="ErrorClassifier.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

@@ -3,6 +3,7 @@ module MsiRemoteUninstall.Tests.CliTests
 open Xunit
 open MsiRemoteUninstall.Domain
 open MsiRemoteUninstall.Cli
+open MsiRemoteUninstall.Errors
 
 [<Fact>]
 let ``defaults`` () =
@@ -62,6 +63,16 @@ let ``credential and behaviour options`` () =
 [<InlineData("--throttle|abc")>]
 [<InlineData("--transport|ssh")>]
 [<InlineData("--filter-mode|glob")>]
-let ``invalid arguments raise CliError`` (args: string) =
-    Assert.ThrowsAny<exn>(fun () -> parse (args.Split '|') |> ignore)
-    |> fun ex -> Assert.IsType<CliError>(ex) |> ignore
+let ``invalid arguments raise MRU101`` (args: string) =
+    let ex = Assert.ThrowsAny<exn>(fun () -> parse (args.Split '|') |> ignore)
+    match ex with
+    | MruException(code, _) -> Assert.Equal("MRU101", code)
+    | other -> failwithf "Unexpected exception %O" other
+
+[<Fact>]
+let ``help options`` () =
+    Assert.Equal(Some "text", (parse [| "--errors" |]).ListErrors)
+    Assert.Equal(Some "json", (parse [| "--errors"; "json" |]).ListErrors)
+    Assert.Equal(Some "markdown", (parse [| "--errors"; "markdown" |]).ListErrors)
+    Assert.Equal(Some "MRU303", (parse [| "--explain"; "MRU303" |]).Explain)
+    Assert.True((parse [| "--skip-preflight" |]).SkipPreflight)

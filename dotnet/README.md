@@ -71,7 +71,33 @@ Run `MsiRemoteUninstall --help` for every option. In brief:
   - `--throttle` (default 16) sets how many servers are handled at once.
   - `--timeout` (minutes per msiexec run, default 60).
   - `--report file.csv` sets the report path. `--remote-log-folder` sets where msiexec logs go on the servers.
-- **Exit codes:** `0` everything OK, `1` at least one failure, `2` invalid arguments.
+- **Help:** `--help`, `--errors [text|markdown|json]` lists all error codes, `--explain <code>`
+  explains one code with remediation steps (e.g. `--explain MRU307`, `--explain 1603`).
+- **Preflight:** before connecting, the tool resolves the name and tests the TCP port (5985/5986 for
+  WinRM, 135 for WMI). `--skip-preflight` disables this.
+
+## Errors and exit codes
+
+Every problem is reported with a code: `MRU1xx` input, `MRU2xx` credentials, `MRU3xx` connection,
+`MRU4xx` remote operation, `MRU5xx` local, `MSIxxxx` msiexec exit codes, `MRU999` unexpected.
+Codes appear in the console, in the `ErrorCode` column of the CSV report, and in a summary at the end
+of the run, which lists the fixes for each code found. All codes, explanations and remediation steps are in
+[`../ERROR-CODES.md`](../ERROR-CODES.md).
+
+| Exit code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | At least one server or MSI failed |
+| 2 | Invalid arguments / input (MRU1xx) |
+| 3 | Credential problem (MRU2xx) |
+| 4 | Aborted at the confirmation question (MRU502) |
+| 5 | No server could be reached |
+| 6 | Unexpected internal error (MRU999) |
+| 10 | Success, but at least one server needs a reboot (MSI3010 / MSI1641) |
+
+The catalog in `Errors.fs` is the single source. After changing it, run `.\Update-ErrorDocs.ps1` to
+regenerate `ERROR-CODES.md` and the copy embedded in `Uninstall-RemoteMsi.v2.ps1`. The unit tests
+fail if either is out of date, or if the code uses an error code that is not in the catalog.
 
 Exit codes 0, 3010 and 1641 count as success; the last two mean a reboot is required. Code 1618
 (another installation running) is retried up to 4 times, 30 s apart.
@@ -80,11 +106,14 @@ Exit codes 0, 3010 and 1641 count as success; the last two mean a reboot is requ
 
 | File | Purpose |
 |---|---|
+| `Errors.fs` | Error catalog (codes, explanations, remediation), text/markdown/json rendering |
 | `Domain.fs` | Types, list files, product-code / wildcard / regex matching, exit codes |
 | `Cli.fs` | Argument parsing and help |
 | `Credentials.fs` | Console credential prompt |
 | `Transport.fs` | `IRemoteSession` abstraction |
+| `Preflight.fs` | DNS + TCP port check before connecting |
 | `PsRemotingTransport.fs` | WinRM / PowerShell SDK implementation |
 | `WmiTransport.fs` | WMI / DCOM implementation |
+| `ErrorClassifier.fs` | Maps WinRM / WMI / COM / .NET exceptions to catalog codes |
 | `Report.fs` | Console tables, CSV reports |
 | `Program.fs` | Orchestration (parallel per server, retries, confirmation) |
