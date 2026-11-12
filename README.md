@@ -2,6 +2,9 @@
 
 PowerShell script that uninstalls MSI products from a list of remote Windows servers.
 
+An F# / .NET 8 console version with the same features (WinRM, WinRM over HTTPS, or WMI/DCOM transport)
+is in [`dotnet/`](dotnet/README.md).
+
 ## Usage
 
 ```powershell
