@@ -15,7 +15,19 @@ PowerShell script that uninstalls MSI products from a list of remote Windows ser
 $cred = Get-Credential
 .\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -MsiListPath .\msis.txt `
     -Credential $cred -Confirm:$false -ReportPath C:\Reports\uninstall.csv
+
+# List installed MSIs (nothing is uninstalled), optionally filtered
+.\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -ListInstalled
+.\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -ListInstalled -Filter contoso,agent
 ```
+
+### Listing / searching installed MSIs
+
+`-ListInstalled` connects to the servers and lists the installed MSI products (name, version,
+publisher, product code, 32/64-bit) on screen and to `.\MsiInventory_<timestamp>.csv`.
+`-Filter` takes one or more plain substrings (case-insensitive, no wildcards or regex); a product is
+shown if its name, publisher or product code contains any of them. Use it to find the exact names or
+product codes for your MSI list file.
 
 Inline parameters and files can be combined; lists are merged and de-duplicated.
 
@@ -25,6 +37,8 @@ Inline parameters and files can be combined; lists are merged and de-duplicated.
 | `-ComputerListPath` | Text file, one server per line |
 | `-MsiName` | MSI display names (wildcards OK) or product code GUIDs |
 | `-MsiListPath` | Text file, one MSI name/GUID per line |
+| `-ListInstalled` | List installed MSIs instead of uninstalling |
+| `-Filter` | Substring(s) to search for in list mode (matches name, publisher or product code) |
 | `-Credential` | Credentials; prompted if omitted |
 | `-UseSSL` | Use WinRM over HTTPS |
 | `-ThrottleLimit` | Parallel servers (default 16) |

@@ -21,6 +21,10 @@
 
     Results are written to the pipeline and to a CSV report.
 
+    With -ListInstalled the script only lists the MSI products installed on the
+    servers (optionally filtered with -Filter) and uninstalls nothing. Use it to
+    find the exact names / product codes to put into the MSI list.
+
 .PARAMETER ComputerName
     One or more server host names.
 
@@ -33,6 +37,15 @@
 .PARAMETER MsiListPath
     Path to a text file with one MSI display name or product code per line.
 
+.PARAMETER ListInstalled
+    List the MSI products installed on the servers instead of uninstalling.
+    -MsiName / -MsiListPath are not needed in this mode.
+
+.PARAMETER Filter
+    Used with -ListInstalled. One or more plain-text substrings (case-insensitive,
+    no wildcards / regex). A product is listed if its DisplayName, Publisher or
+    ProductCode contains ANY of the given substrings.
+
 .PARAMETER Credential
     Credentials used to connect to the servers. If omitted you will be prompted.
 
@@ -44,6 +57,7 @@
 
 .PARAMETER ReportPath
     Path of the CSV report. Default: .\MsiUninstallReport_<timestamp>.csv
+    (or .\MsiInventory_<timestamp>.csv with -ListInstalled).
 
 .PARAMETER RemoteLogFolder
     Folder on each remote server where verbose msiexec logs are written.
@@ -66,6 +80,12 @@
 
     Non-interactive run (no confirmation prompt) with pre-built credentials.
 
+.EXAMPLE
+    .\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -ListInstalled -Filter 'contoso','agent'
+
+    Lists installed MSI products whose name, publisher or product code contains
+    "contoso" or "agent". Nothing is uninstalled.
+
 .NOTES
     Requirements:
       * PowerShell Remoting (WinRM) enabled on the target servers.
@@ -84,6 +104,10 @@ param(
     [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
     [string] $MsiListPath,
 
+    [switch] $ListInstalled,
+
+    [string[]] $Filter,
+
     [System.Management.Automation.PSCredential]
     [System.Management.Automation.Credential()]
     $Credential = [System.Management.Automation.PSCredential]::Empty,
@@ -93,7 +117,7 @@ param(
     [ValidateRange(1, 256)]
     [int] $ThrottleLimit = 16,
 
-    [string] $ReportPath = (Join-Path -Path (Get-Location) -ChildPath ("MsiUninstallReport_{0:yyyyMMdd_HHmmss}.csv" -f (Get-Date))),
+    [string] $ReportPath,
 
     [string] $RemoteLogFolder = 'C:\Windows\Temp\MsiUninstallLogs'
 )
@@ -118,6 +142,32 @@ function Merge-List {
     $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach ($i in $items) { if ($seen.Add($i)) { $i } }
 }
+
+function ConvertFrom-RemoteError {
+    # Turns Invoke-Command errors (unreachable server, access denied, ...) into result rows
+    param($ErrorRecords, [hashtable] $ExtraProperties = @{})
+    foreach ($err in $ErrorRecords) {
+        $target = $null
+        if ($err.PSObject.Properties['TargetObject'] -and $err.TargetObject) { $target = [string]$err.TargetObject }
+        if (-not $target -and $err.PSObject.Properties['OriginInfo'] -and $err.OriginInfo) { $target = $err.OriginInfo.PSComputerName }
+        $row = [ordered]@{ ComputerName = $target }
+        foreach ($k in $ExtraProperties.Keys) { $row[$k] = $ExtraProperties[$k] }
+        $row['Status']  = 'ConnectionFailed'
+        $row['Message'] = $err.Exception.Message
+        [pscustomobject]$row
+    }
+}
+
+function Save-Report {
+    param($Rows, [string] $Path)
+    try {
+        $Rows | Export-Csv -LiteralPath $Path -NoTypeInformation -Encoding UTF8 -WhatIf:$false
+        Write-Host "Report saved to: $Path" -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "Could not write report to '$Path': $($_.Exception.Message)"
+    }
+}
 #endregion
 
 #region Build input lists
@@ -125,12 +175,109 @@ $servers = @(Merge-List -Inline $ComputerName -FilePath $ComputerListPath)
 $msis    = @(Merge-List -Inline $MsiName      -FilePath $MsiListPath)
 
 if ($servers.Count -eq 0) { throw 'No servers specified. Use -ComputerName and/or -ComputerListPath.' }
-if ($msis.Count -eq 0)    { throw 'No MSIs specified. Use -MsiName and/or -MsiListPath.' }
+if ($msis.Count -eq 0 -and -not $ListInstalled) { throw 'No MSIs specified. Use -MsiName and/or -MsiListPath (or -ListInstalled to list installed MSIs).' }
+if ($Filter -and -not $ListInstalled) { Write-Warning '-Filter is only used together with -ListInstalled; ignoring it.' }
+
+if (-not $ReportPath) {
+    $prefix = if ($ListInstalled) { 'MsiInventory' } else { 'MsiUninstallReport' }
+    $ReportPath = Join-Path -Path (Get-Location) -ChildPath ("{0}_{1:yyyyMMdd_HHmmss}.csv" -f $prefix, (Get-Date))
+}
 
 if ($Credential -eq [System.Management.Automation.PSCredential]::Empty) {
     $Credential = Get-Credential -Message 'Enter credentials with local admin rights on the target servers'
     if (-not $Credential) { throw 'No credentials supplied.' }
 }
+
+$connParams = @{
+    ComputerName  = $servers
+    Credential    = $Credential
+    ThrottleLimit = $ThrottleLimit
+    ErrorAction   = 'SilentlyContinue'
+}
+if ($UseSSL) { $connParams['UseSSL'] = $true }
+
+#region List mode
+if ($ListInstalled) {
+    $filters = @($Filter | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Trim() })
+
+    Write-Host ''
+    Write-Host ("Servers ({0}): {1}" -f $servers.Count, ($servers -join ', ')) -ForegroundColor Cyan
+    if ($filters.Count) { Write-Host ("Filter (substring, any of): {0}" -f ($filters -join ', ')) -ForegroundColor Cyan }
+    else                { Write-Host 'Filter: none (listing all MSI products)' -ForegroundColor Cyan }
+    Write-Host ''
+
+    $listScript = {
+        param([string[]] $Filters)
+        $guidPattern = '^\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?$'
+        $keys = @(
+            @{ Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*';             Arch = '64-bit' },
+            @{ Path = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'; Arch = '32-bit' }
+        )
+        $products = foreach ($k in $keys) {
+            Get-ItemProperty -Path $k.Path -ErrorAction SilentlyContinue |
+                Where-Object { $_.PSChildName -match $guidPattern -and $_.PSObject.Properties['DisplayName'] -and $_.DisplayName } |
+                ForEach-Object {
+                    $get = { param($o, $n) if ($o.PSObject.Properties[$n]) { $o.$n } else { $null } }
+                    [pscustomobject]@{
+                        ComputerName = $env:COMPUTERNAME
+                        DisplayName  = $_.DisplayName
+                        Version      = & $get $_ 'DisplayVersion'
+                        Publisher    = & $get $_ 'Publisher'
+                        InstallDate  = & $get $_ 'InstallDate'
+                        Architecture = $k.Arch
+                        ProductCode  = $_.PSChildName.ToUpperInvariant()
+                    }
+                }
+        }
+        $products = $products | Sort-Object ProductCode -Unique
+
+        if ($Filters -and $Filters.Count) {
+            $products = $products | Where-Object {
+                $p = $_
+                $hit = $false
+                foreach ($f in $Filters) {
+                    foreach ($field in @($p.DisplayName, $p.Publisher, $p.ProductCode)) {
+                        if ($field -and ([string]$field).IndexOf($f, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $hit = $true; break }
+                    }
+                    if ($hit) { break }
+                }
+                $hit
+            }
+        }
+        $products | Sort-Object DisplayName
+    }
+
+    Write-Host 'Connecting to servers and collecting installed MSIs...' -ForegroundColor Cyan
+    $remoteErrors = @()
+    $inventory = @(Invoke-Command @connParams -ScriptBlock $listScript -ArgumentList (, $filters) -ErrorVariable remoteErrors |
+        Select-Object ComputerName, DisplayName, Version, Publisher, InstallDate, Architecture, ProductCode)
+
+    $failed = @(ConvertFrom-RemoteError -ErrorRecords $remoteErrors)
+
+    if ($inventory.Count) {
+        $inventory | Sort-Object ComputerName, DisplayName |
+            Format-Table ComputerName, DisplayName, Version, Publisher, ProductCode -AutoSize | Out-Host
+    }
+    else {
+        Write-Host 'No matching MSI products found.' -ForegroundColor Yellow
+    }
+    if ($failed.Count) {
+        Write-Warning ("{0} server(s) could not be queried:" -f $failed.Count)
+        $failed | Format-Table ComputerName, Message -AutoSize -Wrap | Out-Host
+    }
+
+    $inventory | Group-Object ComputerName |
+        Select-Object @{n='ComputerName';e={$_.Name}}, @{n='MatchingMsis';e={$_.Count}} |
+        Format-Table -AutoSize | Out-Host
+
+    $reportRows = @($inventory) + @($failed | Select-Object ComputerName, @{n='DisplayName';e={"ERROR: $($_.Message)"}},
+        Version, Publisher, InstallDate, Architecture, ProductCode)
+    if ($reportRows.Count) { Save-Report -Rows $reportRows -Path $ReportPath }
+
+    $inventory
+    return
+}
+#endregion
 
 Write-Host ''
 Write-Host ("Servers ({0}): {1}" -f $servers.Count, ($servers -join ', ')) -ForegroundColor Cyan
@@ -259,52 +406,21 @@ $remoteScript = {
 #endregion
 
 #region Execute
-$invokeParams = @{
-    ComputerName  = $servers
-    Credential    = $Credential
-    ScriptBlock   = $remoteScript
-    ArgumentList  = @(, $msis) + $dryRun + $RemoteLogFolder
-    ThrottleLimit = $ThrottleLimit
-    ErrorAction   = 'SilentlyContinue'
-    ErrorVariable = 'remoteErrors'
-}
-if ($UseSSL) { $invokeParams['UseSSL'] = $true }
-
 Write-Host 'Connecting to servers and processing...' -ForegroundColor Cyan
 $remoteErrors = @()
-$results = @(Invoke-Command @invokeParams |
+$results = @(Invoke-Command @connParams -ScriptBlock $remoteScript -ArgumentList (@(, $msis) + $dryRun + $RemoteLogFolder) -ErrorVariable remoteErrors |
     Select-Object ComputerName, Msi, DisplayName, Version, ProductCode, Status, ExitCode, Message, LogFile)
 
 # Servers that could not be reached / failed to run the script
-foreach ($err in $remoteErrors) {
-    $target = $null
-    if ($err.PSObject.Properties['TargetObject'] -and $err.TargetObject) { $target = [string]$err.TargetObject }
-    if (-not $target -and $err.PSObject.Properties['OriginInfo'] -and $err.OriginInfo) { $target = $err.OriginInfo.PSComputerName }
-    $results += [pscustomobject]@{
-        ComputerName = $target
-        Msi          = ($msis -join '; ')
-        DisplayName  = $null
-        Version      = $null
-        ProductCode  = $null
-        Status       = 'ConnectionFailed'
-        ExitCode     = $null
-        Message      = $err.Exception.Message
-        LogFile      = $null
-    }
-}
+$results += @(ConvertFrom-RemoteError -ErrorRecords $remoteErrors -ExtraProperties @{ Msi = ($msis -join '; ') } |
+    Select-Object ComputerName, Msi, DisplayName, Version, ProductCode, Status, ExitCode, Message, LogFile)
 #endregion
 
 #region Report
 $results | Sort-Object ComputerName, Msi |
     Format-Table ComputerName, Msi, DisplayName, Version, Status, ExitCode -AutoSize | Out-Host
 
-try {
-    $results | Export-Csv -LiteralPath $ReportPath -NoTypeInformation -Encoding UTF8 -WhatIf:$false
-    Write-Host "Report saved to: $ReportPath" -ForegroundColor Green
-}
-catch {
-    Write-Warning "Could not write report to '$ReportPath': $($_.Exception.Message)"
-}
+Save-Report -Rows $results -Path $ReportPath
 
 $summary = $results | Group-Object Status | Select-Object @{n='Status';e={$_.Name}}, Count
 $summary | Format-Table -AutoSize | Out-Host
