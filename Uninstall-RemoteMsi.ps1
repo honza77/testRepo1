@@ -55,7 +55,18 @@
                             anchored with ^ / $.
 
 .PARAMETER Credential
-    Credentials used to connect to the servers. If omitted you will be prompted.
+    Credentials used to connect to the servers. If omitted you will be prompted
+    (pop-up window by default, or in the console with -ConsoleCredential).
+
+.PARAMETER UserName
+    User name to pre-fill when prompting for credentials, e.g. CONTOSO\admin.
+    Only the password is then asked for.
+
+.PARAMETER ConsoleCredential
+    Ask for the user name and password as text input in the console instead of
+    the Get-Credential pop-up window. Useful over SSH / remote shells or when
+    you simply prefer not to have a dialog. The password is read masked and
+    kept as a SecureString.
 
 .PARAMETER UseSSL
     Connect to WinRM over HTTPS (port 5986).
@@ -87,6 +98,11 @@
     .\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -MsiName '{12345678-90AB-CDEF-1234-567890ABCDEF}' -Credential $cred -Confirm:$false
 
     Non-interactive run (no confirmation prompt) with pre-built credentials.
+
+.EXAMPLE
+    .\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -ListInstalled -ConsoleCredential -UserName CONTOSO\admin
+
+    Asks only for the password, in the console (no pop-up window).
 
 .EXAMPLE
     .\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -ListInstalled -Filter 'contoso','agent'
@@ -132,6 +148,10 @@ param(
     [System.Management.Automation.PSCredential]
     [System.Management.Automation.Credential()]
     $Credential = [System.Management.Automation.PSCredential]::Empty,
+
+    [string] $UserName,
+
+    [switch] $ConsoleCredential,
 
     [switch] $UseSSL,
 
@@ -179,6 +199,25 @@ function ConvertFrom-RemoteError {
     }
 }
 
+function Read-ConsoleCredential {
+    # Prompts for credentials as console text input (no GUI pop-up)
+    param([string] $DefaultUserName, [string] $Message)
+    Write-Host $Message -ForegroundColor Cyan
+    $user = $DefaultUserName
+    if ($user) {
+        Write-Host "User name: $user"
+    }
+    else {
+        $user = (Read-Host -Prompt 'User name (e.g. DOMAIN\user)').Trim()
+    }
+    if (-not $user) { throw 'No user name supplied.' }
+
+    $password = Read-Host -Prompt "Password for $user" -AsSecureString
+    if (-not $password -or $password.Length -eq 0) { throw 'No password supplied.' }
+
+    New-Object System.Management.Automation.PSCredential ($user, $password)
+}
+
 function Save-Report {
     param($Rows, [string] $Path)
     try {
@@ -223,8 +262,19 @@ if (-not $ReportPath) {
 }
 
 if ($Credential -eq [System.Management.Automation.PSCredential]::Empty) {
-    $Credential = Get-Credential -Message 'Enter credentials with local admin rights on the target servers'
+    $credMessage = 'Enter credentials with local admin rights on the target servers'
+    if ($ConsoleCredential) {
+        $Credential = Read-ConsoleCredential -DefaultUserName $UserName -Message $credMessage
+    }
+    else {
+        $getCredParams = @{ Message = $credMessage }
+        if ($UserName) { $getCredParams['UserName'] = $UserName }
+        $Credential = Get-Credential @getCredParams
+    }
     if (-not $Credential) { throw 'No credentials supplied.' }
+}
+elseif ($UserName -or $ConsoleCredential) {
+    Write-Warning '-Credential was supplied; -UserName / -ConsoleCredential are ignored.'
 }
 
 $connParams = @{

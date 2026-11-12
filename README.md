@@ -23,6 +23,16 @@ $cred = Get-Credential
 .\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -ListInstalled -FilterMode Regex -Filter '^Contoso (Agent|Monitor)'
 ```
 
+### Credentials
+
+If `-Credential` isn't given, the script prompts with the standard `Get-Credential` pop-up window.
+Add `-ConsoleCredential` to type the user name and (masked) password in the console instead, e.g. over
+SSH or a remote shell. `-UserName CONTOSO\admin` pre-fills the user name in either mode.
+
+```powershell
+.\Uninstall-RemoteMsi.ps1 -ComputerListPath .\servers.txt -MsiListPath .\msis.txt -ConsoleCredential -UserName CONTOSO\admin
+```
+
 ### Listing / searching installed MSIs
 
 `-ListInstalled` connects to the servers and lists the installed MSI products (name, version,
@@ -51,6 +61,8 @@ Inline parameters and files can be combined; lists are merged and de-duplicated.
 | `-Filter` | Pattern(s) to search for in list mode (matches name, publisher or product code) |
 | `-FilterMode` | `Substring` (default), `Wildcard` or `Regex` |
 | `-Credential` | Credentials; prompted if omitted |
+| `-UserName` | Pre-fill the user name when prompting (only the password is asked) |
+| `-ConsoleCredential` | Prompt for user name/password in the console instead of a pop-up window |
 | `-UseSSL` | Use WinRM over HTTPS |
 | `-ThrottleLimit` | Parallel servers (default 16) |
 | `-ReportPath` | CSV report path (default `.\MsiUninstallReport_<timestamp>.csv`) |
