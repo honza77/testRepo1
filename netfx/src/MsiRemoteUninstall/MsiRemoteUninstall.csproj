@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    MsiRemoteUninstall for .NET Framework 4.8.1 (C#). Runs on Windows with the built-in
+    .NET Framework 4.8.1 - no extra runtime needed. PowerShell Remoting uses the Windows
+    PowerShell 5.1 engine (System.Management.Automation from the GAC); WMI uses System.Management.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net481</TargetFramework>
+    <AssemblyName>MsiRemoteUninstall</AssemblyName>
+    <RootNamespace>MsiRemoteUninstall</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <Version>1.0.0</Version>
+    <!-- run as a 64-bit process on 64-bit Windows (registry view, WinRM client) -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MsiRemoteUninstall.Core\MsiRemoteUninstall.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- compile-time reference only; at run time the GAC copy of Windows PowerShell 5.1 is used -->
+    <PackageReference Include="Microsoft.PowerShell.5.1.ReferenceAssemblies" Version="1.0.0" PrivateAssets="all" ExcludeAssets="runtime" />
+    <Reference Include="System.Management" />
+  </ItemGroup>
+</Project>

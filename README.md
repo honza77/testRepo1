@@ -1,6 +1,20 @@
 # Uninstall-RemoteMsi
 
-PowerShell script that uninstalls MSI products from a list of remote Windows servers.
+Tools to uninstall, list (and for testing, install) MSI products on remote Windows servers.
+
+| Tool | Location | Uninstall | List / search | Install | Error codes |
+|---|---|---|---|---|---|
+| PowerShell script | `Uninstall-RemoteMsi.ps1` | yes | yes | - | - |
+| PowerShell script v2 | `Uninstall-RemoteMsi.v2.ps1` | yes | yes | - | yes |
+| F# / .NET 8 console app | [`dotnet/`](dotnet/README.md) | yes | yes | yes | yes |
+| C# / .NET Framework 4.8.1 console app | [`netfx/`](netfx/README.md) | yes | yes | yes | yes |
+| Sample apps + test MSIs (WiX) | [`samples/`](samples/README.md) | | | | |
+
+All error codes, explanations and fixes: [ERROR-CODES.md](ERROR-CODES.md).
+
+## PowerShell script
+
+`Uninstall-RemoteMsi.ps1` uninstalls MSI products from a list of remote Windows servers.
 
 **Version 2** of the script, `Uninstall-RemoteMsi.v2.ps1`, sits beside the original. It reports every
 problem with an error code, an explanation and remediation steps (see [ERROR-CODES.md](ERROR-CODES.md)):

@@ -1,0 +1,769 @@
+{
+  "ErrorCodes": [
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Input",
+      "Code": "MRU101",
+      "Explanation": "An argument was not recognised, is missing its value, or its value is outside the allowed range. (In the PowerShell script, PowerShell itself validates parameters before the script starts.)",
+      "Remediation": [
+        "Compare the spelling with the help: MsiRemoteUninstall --help.",
+        "Put values that contain spaces or commas in quotes, e.g. -m \"Contoso Agent*\".",
+        "Numeric ranges: --port 1-65535, --throttle 1-256, --timeout 1-1440 (minutes)."
+      ],
+      "Severity": "Error",
+      "Title": "Invalid command-line argument"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Input",
+      "Code": "MRU102",
+      "Explanation": "The list of target servers is empty, so there is nothing to do.",
+      "Remediation": [
+        "Pass servers with --computer / -ComputerName, or a file with --computer-list / -ComputerListPath.",
+        "If you used a list file, make sure it is not empty and not completely commented out (lines starting with # are ignored)."
+      ],
+      "Severity": "Error",
+      "Title": "No servers specified"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Input",
+      "Code": "MRU103",
+      "Explanation": "Uninstall mode needs at least one MSI display name or product code.",
+      "Remediation": [
+        "Pass MSIs with --msi / -MsiName, or a file with --msi-list / -MsiListPath.",
+        "If you only want to see what is installed, use list mode: --list / -ListInstalled."
+      ],
+      "Severity": "Error",
+      "Title": "No MSIs specified"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Input",
+      "Code": "MRU104",
+      "Explanation": "A server or MSI list file does not exist at the given path.",
+      "Remediation": [
+        "Check the path and file name for typos.",
+        "Relative paths are resolved against the current directory - use a full path if unsure.",
+        "Quote paths that contain spaces."
+      ],
+      "Severity": "Error",
+      "Title": "List file not found"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Input",
+      "Code": "MRU105",
+      "Explanation": "The list file exists but could not be opened or read.",
+      "Remediation": [
+        "Check that your account has read permission on the file.",
+        "Close the file if another program (e.g. Excel) holds it locked.",
+        "Save the file as plain text (UTF-8 or ANSI), one entry per line."
+      ],
+      "Severity": "Error",
+      "Title": "List file cannot be read"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Input",
+      "Code": "MRU106",
+      "Explanation": "A --filter / -Filter pattern is not valid for the chosen filter mode (regex or wildcard). Nothing was contacted.",
+      "Remediation": [
+        "Regex mode: escape special characters with a backslash, e.g. C\\+\\+ or \\(x64\\), and balance all brackets and parentheses.",
+        "Wildcard mode: close every '[' with ']'; to match a literal '[' or '*' escape it with a backtick, e.g. `[.",
+        "If you just want 'contains this text', use the default substring mode (no special characters at all)."
+      ],
+      "Severity": "Error",
+      "Title": "Invalid search filter pattern"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Input",
+      "Code": "MRU107",
+      "Explanation": "An MSI entry that is not a product code is treated as a wildcard pattern, and this one is not valid (usually an unclosed '[').",
+      "Remediation": [
+        "Close every '[' with ']' or escape it with a backtick: `[.",
+        "Alternatively use the product code GUID, which is matched exactly. List mode (--list / -ListInstalled) shows the product codes."
+      ],
+      "Severity": "Error",
+      "Title": "Invalid MSI name pattern"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Input",
+      "Code": "MRU108",
+      "Explanation": "An option was given that has no effect in this combination (for example --filter without --list, or --ssl with the WMI transport). The run continues without it.",
+      "Remediation": [
+        "Remove the option, or add the option it depends on (see the warning text)."
+      ],
+      "Severity": "Warning",
+      "Title": "Option ignored"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Input",
+      "Code": "MRU109",
+      "Explanation": "More than one operation was requested at the same time. A run either uninstalls (--msi), lists (--list) or installs (--install).",
+      "Remediation": [
+        "Use only one of --msi / --msi-list, --list, or --install / --install-list per run.",
+        "To test a full cycle, run the tool twice: first with --install, then with --msi."
+      ],
+      "Severity": "Error",
+      "Title": "Conflicting operation modes"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Input",
+      "Code": "MRU110",
+      "Explanation": "An MSI package given with --install / --install-list does not exist in the package source (folder, share or URL), or a wildcard matched no file.",
+      "Remediation": [
+        "Check the file name; the .msi extension is added automatically if missing.",
+        "Check --package-source: relative names are looked up there (default: the current directory).",
+        "List the folder to see what is available, e.g. dir \\\\fileserver\\packages\\*.msi.",
+        "For a URL source, open the full URL in a browser to verify it exists."
+      ],
+      "Severity": "Error",
+      "Title": "Package not found"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Input",
+      "Code": "MRU111",
+      "Explanation": "The package source folder, share or web server could not be accessed, or a download failed.",
+      "Remediation": [
+        "Check the path / URL in --package-source for typos.",
+        "For a share: check that your account can open it in Explorer (\\\\server\\share) and that the server is reachable.",
+        "For a URL: check proxy settings, TLS and that the web server returns the file (HTTP 200).",
+        "Copy the packages to a local folder and use that as --package-source."
+      ],
+      "Severity": "Error",
+      "Title": "Package source not accessible"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Input",
+      "Code": "MRU112",
+      "Explanation": "A --msi-property value is not in the form NAME=VALUE, or the value contains characters that cannot be passed safely to msiexec (a double quote; with the WMI transport also ! and %).",
+      "Remediation": [
+        "Use the form NAME=VALUE, e.g. --msi-property INSTALLFOLDER=D:\\Apps\\Hello. Public property names are UPPERCASE.",
+        "Quote the whole argument if the value contains spaces: --msi-property \"COMPANY=Contoso Ltd\".",
+        "Avoid double quotes in values; with -t wmi also avoid ! and %, or use the psremoting transport."
+      ],
+      "Severity": "Error",
+      "Title": "Invalid MSI property"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Credentials",
+      "Code": "MRU201",
+      "Explanation": "The credential prompt was cancelled or the user name was left empty.",
+      "Remediation": [
+        "Run again and enter the user name as DOMAIN\\user, user@domain.fqdn, or SERVER\\user for a local account.",
+        "Pre-fill the user name with --user / -UserName.",
+        "To use your current Windows logon instead, use --current-user (.NET) or run the script from a session already logged on as the right account and pass -Credential (Get-Credential)."
+      ],
+      "Severity": "Error",
+      "Title": "No user name entered / credential prompt cancelled"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Credentials",
+      "Code": "MRU202",
+      "Explanation": "The password was empty. Empty passwords cannot be used for remote management.",
+      "Remediation": [
+        "Run again and type the password (it is not shown while typing).",
+        "For unattended runs use --password-env VAR (.NET) or pass a prepared -Credential object (PowerShell)."
+      ],
+      "Severity": "Error",
+      "Title": "No password entered"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Credentials",
+      "Code": "MRU203",
+      "Explanation": "--password-env was given, but that environment variable does not exist or is empty in this process.",
+      "Remediation": [
+        "Set the variable in the same shell before starting the tool, e.g. PowerShell: $env:MRU_PW = '...'; cmd: set MRU_PW=...",
+        "Check the variable name passed to --password-env (no $ or % around it)."
+      ],
+      "Severity": "Error",
+      "Title": "Password environment variable missing"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Credentials",
+      "Code": "MRU204",
+      "Explanation": "There is no interactive console to ask for the password (for example when started from a scheduled task, a service or a non-interactive remote shell).",
+      "Remediation": [
+        "Run the tool from an interactive console.",
+        ".NET: pass --user together with --password-env, or use --current-user.",
+        "PowerShell: pass -Credential with a PSCredential object, or use -ConsoleCredential in a console host."
+      ],
+      "Severity": "Error",
+      "Title": "Cannot prompt for credentials"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Connection",
+      "Code": "MRU301",
+      "Explanation": "DNS (or NetBIOS) could not translate the server name into an IP address, so no connection was attempted.",
+      "Remediation": [
+        "Check the server name for typos.",
+        "Try the fully qualified name, e.g. srv01.contoso.local.",
+        "Test name resolution: Resolve-DnsName srv01 (PowerShell) or nslookup srv01.",
+        "Check the client's DNS servers / VPN connection, or that the server still exists."
+      ],
+      "Severity": "Error",
+      "Title": "Server name cannot be resolved"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Connection",
+      "Code": "MRU302",
+      "Explanation": "The name resolved, but a TCP connection to the remote management port was refused or timed out (WinRM: 5985 HTTP / 5986 HTTPS, WMI/DCOM: 135). The server is offline, a firewall blocks the port, or nothing is listening on it.",
+      "Remediation": [
+        "Check that the server is running: Test-Connection srv01.",
+        "Test the port: Test-NetConnection srv01 -Port 5985 (or 5986 with SSL, 135 for WMI).",
+        "WinRM: on the server run Enable-PSRemoting -Force, which also opens the 'Windows Remote Management (HTTP-In)' firewall rule. For HTTPS an HTTPS listener and a 5986 firewall rule are needed.",
+        "WMI: enable the firewall rule group 'Windows Management Instrumentation (WMI)' on the server.",
+        "Check network firewalls / security groups between client and server.",
+        "If the port check itself is the problem (e.g. through a proxy), skip it with --skip-preflight / -SkipPreflight."
+      ],
+      "Severity": "Error",
+      "Title": "Server unreachable or management port closed"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Connection",
+      "Code": "MRU303",
+      "Explanation": "The server was reached and the credentials were checked, but the account is not allowed to do this. Uninstalling software requires local administrator rights on the server.",
+      "Remediation": [
+        "Make sure the account is a member of the local Administrators group on the server (directly or via a domain group).",
+        "Local (non-domain) administrator accounts are filtered by UAC remote restrictions: use a domain account, or set HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\LocalAccountTokenFilterPolicy = 1 (DWORD) on the server.",
+        "WinRM: check the endpoint permissions on the server: Get-PSSessionConfiguration Microsoft.PowerShell | Select Permission.",
+        "WMI: check namespace security (wmimgmt.msc -> WMI Control -> Security, root\\cimv2 and root\\default need 'Remote Enable') and DCOM remote launch/activation permissions (dcomcnfg).",
+        "Verify the credentials are the ones you intended (--user / -UserName)."
+      ],
+      "Severity": "Error",
+      "Title": "Access denied"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Connection",
+      "Code": "MRU304",
+      "Explanation": "The server rejected the user name or password: wrong password, unknown user, locked or disabled account, expired password, or the domain controller could not be contacted.",
+      "Remediation": [
+        "Re-enter the password carefully (Caps Lock, keyboard layout).",
+        "Use the form DOMAIN\\user or user@domain.fqdn; for a local account on the server use SERVER\\user.",
+        "Check whether the account is locked out, disabled or its password expired (Get-ADUser user -Properties LockedOut,Enabled,PasswordExpired).",
+        "Kerberos requires the clocks of client, server and domain controller to be within 5 minutes - check time synchronisation (w32tm /query /status)."
+      ],
+      "Severity": "Error",
+      "Title": "Logon failure"
+    },
+    {
+      "AppliesTo": "PowerShell Remoting",
+      "Category": "Connection",
+      "Code": "MRU305",
+      "Explanation": "The WinRM port answers, but WinRM did not accept the request: the service is stopped, there is no listener for this protocol (HTTP vs HTTPS) or port, the listener is bound to another address, or PowerShell remoting endpoints are disabled.",
+      "Remediation": [
+        "On the server: Enable-PSRemoting -Force (or winrm quickconfig).",
+        "Check the service: Get-Service WinRM (should be Running, startup Automatic).",
+        "List listeners: winrm enumerate winrm/config/listener - for --ssl / -UseSSL an HTTPS listener is required.",
+        "Check the port option (--port / -Port) matches the listener.",
+        "From the client: Test-WSMan srv01 (add -UseSSL for HTTPS).",
+        "Alternatively use the WMI transport (.NET: -t wmi)."
+      ],
+      "Severity": "Error",
+      "Title": "WinRM service not available"
+    },
+    {
+      "AppliesTo": "PowerShell Remoting with SSL",
+      "Category": "Connection",
+      "Code": "MRU306",
+      "Explanation": "The HTTPS connection to WinRM failed because the server certificate is not trusted, has expired, or its name does not match the server name you used.",
+      "Remediation": [
+        "Connect with the exact name in the certificate's Subject / SAN - usually the FQDN (srv01.contoso.local).",
+        "Make sure the issuing CA is trusted on the client (Local Computer\\Trusted Root Certification Authorities).",
+        "Renew the certificate if it has expired and update the HTTPS listener's thumbprint.",
+        "For testing only, skip the checks with --skip-cert-check / -SkipCertificateCheck (traffic is still encrypted, but the server is not verified)."
+      ],
+      "Severity": "Error",
+      "Title": "TLS / certificate problem"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Connection",
+      "Code": "MRU307",
+      "Explanation": "The client and server could not agree on an authentication method. Typical causes: connecting by IP address or alias (Kerberos needs the real host name), the client or server is not in the domain and the server is not in TrustedHosts, CredSSP is not enabled, or Basic authentication is used over plain HTTP.",
+      "Remediation": [
+        "Connect using the server's real host name or FQDN, not an IP address or DNS alias.",
+        "For workgroup servers or IP addresses add the server to TrustedHosts on the client (as admin): Set-Item WSMan:\\localhost\\Client\\TrustedHosts -Value 'srv01' -Concatenate - or use HTTPS (--ssl / -UseSSL), which does not need TrustedHosts.",
+        "CredSSP: enable it on both sides (Enable-WSManCredSSP -Role Client / -Role Server).",
+        "Basic: only works with local accounts and requires HTTPS or AllowUnencrypted on the server - prefer the default (Negotiate).",
+        "Check the server's SPNs if Kerberos fails for a correct name: setspn -L srv01."
+      ],
+      "Severity": "Error",
+      "Title": "Authentication method could not be used"
+    },
+    {
+      "AppliesTo": "WMI transport",
+      "Category": "Connection",
+      "Code": "MRU308",
+      "Explanation": "DCOM could not reach the WMI service. Port 135 may be open, but DCOM also needs the dynamic RPC port range (49152-65535 by default), or the WMI service is not running.",
+      "Remediation": [
+        "On the server enable the firewall rule group 'Windows Management Instrumentation (WMI)' (it covers the dynamic ports for WMI).",
+        "Allow the dynamic RPC ports on network firewalls between client and server.",
+        "Check the WMI service on the server: Get-Service Winmgmt.",
+        "Or use the PowerShell Remoting transport (one fixed port, 5985/5986)."
+      ],
+      "Severity": "Error",
+      "Title": "RPC server unavailable (WMI / DCOM)"
+    },
+    {
+      "AppliesTo": "WMI transport",
+      "Category": "Connection",
+      "Code": "MRU309",
+      "Explanation": "WMI on the server reported a problem with a namespace, class or provider (root\\cimv2 or root\\default / StdRegProv). The WMI repository may be damaged.",
+      "Remediation": [
+        "On the server check the repository: winmgmt /verifyrepository (and winmgmt /salvagerepository if inconsistent).",
+        "Restart the WMI service: Restart-Service Winmgmt -Force.",
+        "Test locally on the server: Get-CimInstance Win32_OperatingSystem.",
+        "Use the PowerShell Remoting transport as a workaround."
+      ],
+      "Severity": "Error",
+      "Title": "WMI error on the server"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Connection",
+      "Code": "MRU310",
+      "Explanation": "The server accepted the network connection but did not complete the session setup in time. The server may be overloaded, hanging, or the network is very slow.",
+      "Remediation": [
+        "Retry later - check the server's CPU / memory load.",
+        "Test the connection directly: Test-WSMan srv01 or Get-CimInstance -ComputerName srv01 Win32_OperatingSystem.",
+        "Reduce the parallelism with --throttle / -ThrottleLimit if many servers share a slow link."
+      ],
+      "Severity": "Error",
+      "Title": "Connection timed out"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Connection",
+      "Code": "MRU399",
+      "Explanation": "Connecting failed for a reason that does not fit the other categories. The detail message contains the original error from Windows.",
+      "Remediation": [
+        "Read the detail message in the report - it usually names the cause.",
+        "Test the connection manually: Test-WSMan srv01, Enter-PSSession srv01, or Get-CimInstance -ComputerName srv01 Win32_OperatingSystem.",
+        "On the server check the event logs Microsoft-Windows-WinRM/Operational and System."
+      ],
+      "Severity": "Error",
+      "Title": "Other connection error"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Remote operation",
+      "Code": "MRU401",
+      "Explanation": "The connection worked, but reading the list of installed MSI products from the server's registry (Uninstall keys) failed.",
+      "Remediation": [
+        "Make sure the account is a local administrator on the server.",
+        "Retry - a transient WMI / WinRM problem is possible.",
+        "Test on the server: Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'.",
+        "WMI transport: see MRU309 for WMI repository problems."
+      ],
+      "Severity": "Error",
+      "Title": "Could not read installed products"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Remote operation",
+      "Code": "MRU402",
+      "Explanation": "The uninstall process could not be started. WMI Win32_Process.Create codes: 2 = access denied, 3 = insufficient privilege, 8 = unknown failure, 9 = path not found, 21 = invalid parameter. It can also mean the remote log folder could not be created.",
+      "Remediation": [
+        "Make sure the account is a local administrator on the server.",
+        "Check that the remote log folder (--remote-log-folder / -RemoteLogFolder) is a valid local path on the server and its drive exists.",
+        "Check whether AppLocker / WDAC / antivirus blocks msiexec.exe, cmd.exe or reg.exe for remote processes.",
+        "Verify %SystemRoot%\\System32\\msiexec.exe exists on the server."
+      ],
+      "Severity": "Error",
+      "Title": "Could not start msiexec on the server"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Remote operation",
+      "Code": "MRU403",
+      "Explanation": "msiexec was still running when the timeout expired. It may be waiting for a dialog that cannot be shown (a custom action ignoring /qn), blocked by a locked file or service, or the product is simply very large. The process is left running on the server.",
+      "Remediation": [
+        "Look at the msiexec log on the server (path in the report) - the last lines show what it is doing.",
+        "Check for running installer processes on the server: Get-Process msiexec.",
+        "Stop the hung msiexec process if needed, or reboot the server to clear pending operations.",
+        "Increase the timeout: --timeout / -TimeoutMinutes (minutes)."
+      ],
+      "Severity": "Error",
+      "Title": "msiexec did not finish in time"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Remote operation",
+      "Code": "MRU404",
+      "Explanation": "msiexec ran but its exit code could not be read back. WMI transport: the temporary value under HKLM\\SOFTWARE\\MsiRemoteUninstall\\ExitCodes was not written (cmd.exe or reg.exe blocked, or the process was killed). PowerShell Remoting: the remote command returned no exit code.",
+      "Remediation": [
+        "Check whether the product is still installed: run in list mode (--list / -ListInstalled).",
+        "Read the msiexec log on the server (path in the report).",
+        "Check AppLocker / WDAC / antivirus rules for cmd.exe and reg.exe."
+      ],
+      "Severity": "Error",
+      "Title": "msiexec result could not be determined"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Remote operation",
+      "Code": "MRU405",
+      "Explanation": "An unexpected error occurred while running the command on the server, or the session broke (server rebooted, network dropped, WinRM memory or idle limits reached).",
+      "Remediation": [
+        "Read the detail message in the report.",
+        "Run again - products that were already removed are reported as NotFound, so re-running is safe.",
+        "Check the server's event logs (Application, System, Microsoft-Windows-WinRM/Operational).",
+        "If the session broke, check whether the server rebooted (some uninstalls force a reboot)."
+      ],
+      "Severity": "Error",
+      "Title": "Remote command failed"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Remote operation",
+      "Code": "MRU406",
+      "Explanation": "The MSI package could not be transferred to the staging folder on the server. PowerShell Remoting copies the file through the WinRM session; the WMI transport copies it through the administrative share (\\\\server\\C$).",
+      "Remediation": [
+        "Check free disk space on the server and that the staging folder (--remote-staging-folder) is a valid local path there.",
+        "WMI transport: the admin share must be reachable - TCP port 445 open, 'File and Printer Sharing' enabled, admin shares not disabled (AutoShareServer), and the account must be a local administrator.",
+        "WMI transport, Windows error 1219: you already have a connection to that server with other credentials (e.g. a mapped drive) - disconnect it (net use \\\\server\\C$ /delete) or use the same account.",
+        "Alternatively let the server read the package itself: --source-mode direct with a UNC path (see MSI1619 for the double-hop limitation)."
+      ],
+      "Severity": "Error",
+      "Title": "Package could not be copied to the server"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Remote operation",
+      "Code": "MRU407",
+      "Explanation": "After installing, the copied MSI could not be deleted from the staging folder on the server. The installation itself is not affected (Windows Installer keeps its own cached copy).",
+      "Remediation": [
+        "Delete the file manually from the staging folder on the server (path in the message).",
+        "Use --keep-staged if you want to keep the copies on purpose."
+      ],
+      "Severity": "Warning",
+      "Title": "Staged package could not be removed"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Local",
+      "Code": "MRU501",
+      "Explanation": "The CSV report could not be saved. The results were still shown on screen and (PowerShell) returned as objects.",
+      "Remediation": [
+        "Check that the target folder exists and you can write to it.",
+        "Close the file if it is open in Excel.",
+        "Choose another path with --report / -ReportPath."
+      ],
+      "Severity": "Warning",
+      "Title": "Report could not be written"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Local",
+      "Code": "MRU502",
+      "Explanation": "The confirmation question was answered with No, so nothing was uninstalled.",
+      "Remediation": [
+        "Run again and confirm with 'y', or skip the question with -y / --yes (.NET) or -Confirm:$false (PowerShell).",
+        "Use --what-if / -WhatIf first to see what would be removed."
+      ],
+      "Severity": "Info",
+      "Title": "Aborted by user"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Local",
+      "Code": "MRU504",
+      "Explanation": "The ProductName / ProductCode / version of a package could not be read before installing (msi.dll is only available on Windows, or the file is not a valid MSI). The package is still installed, but the tool cannot detect whether it is already installed.",
+      "Remediation": [
+        "Run the tool on Windows.",
+        "Check that the file is a valid, complete MSI (open it with Orca or compare its size with the original)."
+      ],
+      "Severity": "Warning",
+      "Title": "Package details could not be read"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Local",
+      "Code": "MRU503",
+      "Explanation": "The WinRM client and WMI/DCOM APIs used by the tool exist only on Windows. This happens when the .NET tool is started on Linux or macOS.",
+      "Remediation": [
+        "Run the tool on Windows 10/11 or Windows Server 2016 or newer.",
+        "Or use the PowerShell script from a Windows machine."
+      ],
+      "Severity": "Error",
+      "Title": "Remote management not available on this OS"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1601",
+      "Explanation": "msiexec could not contact the Windows Installer service on the server. The service may be disabled or its registration damaged, or Windows is in Safe Mode.",
+      "Remediation": [
+        "On the server: Get-Service msiserver - the startup type must not be Disabled.",
+        "Re-register Windows Installer (as admin): msiexec /unregister then msiexec /regserver.",
+        "Reboot the server and retry."
+      ],
+      "Severity": "Error",
+      "Title": "Windows Installer service not accessible"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1602",
+      "Explanation": "The uninstall was cancelled. With a silent uninstall (/qn) this usually means a custom action of the product cancelled it.",
+      "Remediation": [
+        "Read the msiexec log on the server (path in the report) for the reason.",
+        "Check the vendor's documentation for prerequisites for uninstalling (e.g. a removal password or a service that must be stopped)."
+      ],
+      "Severity": "Error",
+      "Title": "Uninstall cancelled"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1603",
+      "Explanation": "A generic failure inside the install or uninstall (for installs also: a newer version is already installed and downgrades are blocked). The most common causes: a custom action of the product failed, files or services are in use, a pending reboot, or missing permissions inside the product's own uninstall logic.",
+      "Remediation": [
+        "Open the verbose msiexec log (path in the report) and search for 'Return value 3' - the lines just above it name the failing action.",
+        "Stop the product's processes and services, then retry.",
+        "Reboot the server (clears pending file operations) and retry.",
+        "Use the vendor's removal / cleanup tool if the product's uninstaller is broken."
+      ],
+      "Severity": "Error",
+      "Title": "Fatal error during uninstall"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1605",
+      "Explanation": "msiexec reports the product is not installed. It was removed in the meantime (for example by an earlier entry in the same run), or it was installed per-user under another account.",
+      "Remediation": [
+        "Usually nothing to do. Check with list mode (--list / -ListInstalled) if unsure."
+      ],
+      "Severity": "Info",
+      "Title": "Product is not installed"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1612",
+      "Explanation": "Windows Installer needs the original MSI package to uninstall, but its cached copy (C:\\Windows\\Installer) and the original source location are missing.",
+      "Remediation": [
+        "Copy the exact same version of the original .msi back to its original source path, or run msiexec /x <path-to-product.msi> on the server.",
+        "Use the vendor's cleanup tool, or Microsoft's 'Program Install and Uninstall troubleshooter'.",
+        "Avoid cleaning C:\\Windows\\Installer manually in future."
+      ],
+      "Severity": "Error",
+      "Title": "Installation source unavailable"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1618",
+      "Explanation": "Only one Windows Installer operation can run at a time. Another installation (Windows Update, software deployment, a hung msiexec) was still running after all retries.",
+      "Remediation": [
+        "Wait until the other installation finishes and run again.",
+        "Check on the server: Get-Process msiexec, and Windows Update / deployment agent activity.",
+        "If an msiexec process is hung, stop it or reboot the server."
+      ],
+      "Severity": "Error",
+      "Title": "Another installation is in progress"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1619",
+      "Explanation": "The MSI package could not be opened - it is missing, inaccessible or corrupt. When installing with --source-mode direct from a share, this usually means the server cannot read the share: remote sessions cannot pass your credentials on to a third machine (the 'double hop' problem).",
+      "Remediation": [
+        "Installing with --source-mode direct: use --source-mode copy (default) instead, or grant the server's computer account (DOMAIN\\SERVER$) read access to the share.",
+        "Uninstalling: same as MSI1612 - restore the original .msi of the same version, or uninstall using the package path.",
+        "Check antivirus quarantine for C:\\Windows\\Installer\\*.msi files."
+      ],
+      "Severity": "Error",
+      "Title": "Installation package could not be opened"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1620",
+      "Explanation": "The cached MSI package exists but is not a valid Windows Installer package (corrupt).",
+      "Remediation": [
+        "Restore the original .msi of the same version and uninstall using its path, or use the vendor's cleanup tool."
+      ],
+      "Severity": "Error",
+      "Title": "Installation package is invalid"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1622",
+      "Explanation": "msiexec could not create the verbose log file in the remote log folder.",
+      "Remediation": [
+        "Check that the remote log folder (--remote-log-folder / -RemoteLogFolder) is a valid, writable local path on the server.",
+        "Check free disk space on the server.",
+        "Avoid very long paths or special characters in the log folder path."
+      ],
+      "Severity": "Error",
+      "Title": "Log file could not be opened"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1624",
+      "Explanation": "The product was installed with a transform (.mst) whose cached copy is missing or invalid, so Windows Installer cannot open the product configuration.",
+      "Remediation": [
+        "Restore the transform file to the path used at install time.",
+        "Use the vendor's cleanup tool."
+      ],
+      "Severity": "Error",
+      "Title": "Error applying transforms"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1625",
+      "Explanation": "A Group Policy or local policy prevents this uninstall (for example 'Turn off Windows Installer' or 'Prohibit removal of updates').",
+      "Remediation": [
+        "Check the applied policies on the server: gpresult /h report.html.",
+        "Ask the policy owner for an exception, or run the uninstall with an account the policy allows."
+      ],
+      "Severity": "Error",
+      "Title": "Prohibited by system policy"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1633",
+      "Explanation": "The package is not supported on this processor architecture / platform.",
+      "Remediation": [
+        "Check the msiexec log; this is unusual for an uninstall and may indicate a corrupt product registration.",
+        "Use the vendor's cleanup tool."
+      ],
+      "Severity": "Error",
+      "Title": "Platform not supported"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1638",
+      "Explanation": "Installing failed because another version of this product (same UpgradeCode, without an upgrade rule allowing it) is already installed.",
+      "Remediation": [
+        "Uninstall the other version first (list it with --list to get its product code).",
+        "Use a package version that is built as a major upgrade of the installed one."
+      ],
+      "Severity": "Error",
+      "Title": "Another version is already installed"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1639",
+      "Explanation": "msiexec rejected its command line.",
+      "Remediation": [
+        "Check the remote log folder path (--remote-log-folder / -RemoteLogFolder) for unusual characters such as quotes.",
+        "If the problem persists, report it as a bug including the product code."
+      ],
+      "Severity": "Error",
+      "Title": "Invalid command line argument"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1641",
+      "Explanation": "The uninstall succeeded and the installer started a reboot of the server, despite /norestart (some products force it).",
+      "Remediation": [
+        "Nothing to do - the server is restarting. Check it comes back online."
+      ],
+      "Severity": "Warning",
+      "Title": "Uninstalled - reboot initiated"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI3010",
+      "Explanation": "The uninstall succeeded, but some files or settings are only removed after the server restarts.",
+      "Remediation": [
+        "Schedule a reboot of the server, e.g. Restart-Computer -ComputerName srv01 at a convenient time."
+      ],
+      "Severity": "Warning",
+      "Title": "Uninstalled - reboot required"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI-OTHER",
+      "Explanation": "msiexec returned an exit code that is not described here.",
+      "Remediation": [
+        "Look up the code: net helpmsg <code>, or search Microsoft's 'MsiExec.exe and InstMsi.exe error messages' page.",
+        "Read the verbose msiexec log on the server (path in the report)."
+      ],
+      "Severity": "Error",
+      "Title": "Other msiexec error"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "Internal",
+      "Code": "MRU999",
+      "Explanation": "An error occurred that the tool does not handle specifically - most likely a bug.",
+      "Remediation": [
+        "Read the detail message, it contains the original error.",
+        "Run again; if it happens again, report it together with the detail message and the command line (without passwords)."
+      ],
+      "Severity": "Error",
+      "Title": "Unexpected internal error"
+    }
+  ],
+  "ExitCodes": [
+    {
+      "Description": "Everything completed successfully.",
+      "ExitCode": 0,
+      "Title": "Success"
+    },
+    {
+      "Description": "At least one server or MSI failed - see the report and the listed error codes.",
+      "ExitCode": 1,
+      "Title": "Partial failure"
+    },
+    {
+      "Description": "Invalid arguments or input files (MRU1xx). Nothing was contacted.",
+      "ExitCode": 2,
+      "Title": "Invalid input"
+    },
+    {
+      "Description": "No usable credentials (MRU2xx). Nothing was contacted.",
+      "ExitCode": 3,
+      "Title": "Credential problem"
+    },
+    {
+      "Description": "The confirmation question was answered with No (MRU502).",
+      "ExitCode": 4,
+      "Title": "Aborted"
+    },
+    {
+      "Description": "Every server failed to connect (MRU3xx).",
+      "ExitCode": 5,
+      "Title": "No server reachable"
+    },
+    {
+      "Description": "Unexpected error (MRU999).",
+      "ExitCode": 6,
+      "Title": "Internal error"
+    },
+    {
+      "Description": "Everything succeeded, but at least one server needs a reboot (MSI3010 / MSI1641).",
+      "ExitCode": 10,
+      "Title": "Success, reboot required"
+    }
+  ]
+}

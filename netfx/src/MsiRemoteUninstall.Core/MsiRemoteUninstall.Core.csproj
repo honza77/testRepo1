@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    All logic that does not depend on a remoting technology: error catalog, input parsing,
+    matching, package resolution, preflight, console/CSV output.
+    Targets .NET Framework 4.8.1 (used by the tool) and .NET 8 (lets the unit tests run on any OS).
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net481;net8.0</TargetFrameworks>
+    <RootNamespace>MsiRemoteUninstall</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- generated from the F# catalog (dotnet/MsiRemoteUninstall/Errors.fs) -->
+    <EmbeddedResource Include="..\..\..\shared\error-catalog.json" LogicalName="error-catalog.json" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net481'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+</Project>

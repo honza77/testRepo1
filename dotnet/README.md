@@ -1,7 +1,9 @@
 # MsiRemoteUninstall (F# / .NET 8)
 
 Console app that works like `Uninstall-RemoteMsi.ps1`: it uninstalls MSI products from a list of
-remote Windows servers, or lists and searches the MSIs installed on them.
+remote Windows servers, or lists and searches the MSIs installed on them. For preparing test servers
+it can also **install** MSI packages from a local folder, a UNC share or an HTTP(S) URL. A C# /
+.NET Framework 4.8.1 version with the same features is in [`../netfx`](../netfx/README.md).
 
 ## Build
 
@@ -53,6 +55,31 @@ MsiRemoteUninstall -c SRV01 --list -f contoso -f agent
 MsiRemoteUninstall -c SRV01 --list --filter-mode wildcard -f "*Visual C++ 20??*"
 MsiRemoteUninstall -c SRV01 --list --filter-mode regex -f "^Contoso (Agent|Monitor)"
 ```
+
+### Install mode (test preparation)
+
+```text
+MsiRemoteUninstall -c SRV01 --install "*.msi" -s \\fileserver\msi\test -y
+MsiRemoteUninstall -c SRV01 -i Contoso.HelloWorld-1.0.0 -s http://localhost:8080/msi/
+MsiRemoteUninstall -c SRV01 -i D:\Packages\App.msi --source-mode direct
+MsiRemoteUninstall -c SRV01 -i App.msi -p INSTALLFOLDER=D:\Apps\App
+```
+
+- **Where packages come from:** an `-i/--install` entry (or a line in `--install-list`) is a file
+  name looked up in `-s/--package-source` (a folder, UNC share or base URL; `.msi` optional;
+  wildcards allowed for folders), a full path, or a URL.
+- **`--source-mode copy`** (default): the package is copied to `--remote-staging-folder` on each
+  server, installed, then deleted (`--keep-staged` keeps it).
+  - `psremoting` sends it in chunks through the WinRM session.
+  - `wmi` copies it through the `\\server\C$` admin share.
+- **`--source-mode direct`:** the server opens the path itself (see `--explain MSI1619` about the
+  double hop).
+- **Already installed:** packages whose ProductCode (read with msi.dll) is already installed are
+  skipped (`AlreadyInstalled`).
+- **MSI properties:** `-p/--msi-property NAME=VALUE` passes public MSI properties on install and
+  uninstall.
+
+Test packages: [`../samples`](../samples/README.md).
 
 Run `MsiRemoteUninstall --help` for every option. In brief:
 
@@ -107,6 +134,7 @@ Exit codes 0, 3010 and 1641 count as success; the last two mean a reboot is requ
 | File | Purpose |
 |---|---|
 | `Errors.fs` | Error catalog (codes, explanations, remediation), text/markdown/json rendering |
+| `Packages.fs` | Install mode: package resolution (folder / UNC / URL), msi.dll package info |
 | `Domain.fs` | Types, list files, product-code / wildcard / regex matching, exit codes |
 | `Cli.fs` | Argument parsing and help |
 | `Credentials.fs` | Console credential prompt |

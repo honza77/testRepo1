@@ -1,0 +1,73 @@
+<!--
+  Sample package for testing MsiRemoteUninstall / Uninstall-RemoteMsi.ps1.
+
+  PkgBehavior controls how the UNINSTALL behaves, so every outcome can be tested:
+    Normal            uninstalls cleanly                                -> exit 0
+    RebootRequired    schedules a reboot on uninstall (with /norestart) -> exit 3010 (MSI3010)
+    FailingUninstall  refuses to uninstall                               -> exit 1603 (MSI1603)
+                      unless the property FORCE_UNINSTALL=1 is passed
+                      (MsiRemoteUninstall ... -p FORCE_UNINSTALL=1)
+    SlowUninstall     waits ~150 s during uninstall                      -> test a short timeout (MRU403)
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="$(var.PkgName)"
+           Manufacturer="$(var.PkgManufacturer)"
+           Version="$(var.PkgVersion)"
+           UpgradeCode="$(var.PkgUpgradeCode)"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- C:\Program Files\<Manufacturer>\<ProductName> (Program Files (x86) for x86 packages) -->
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="ManufacturerFolder" Name="$(var.PkgManufacturer)">
+        <Directory Id="INSTALLFOLDER" Name="$(var.PkgName)" />
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PkgAppDir)\**" />
+    </ComponentGroup>
+
+    <!-- Marker in the registry so an installation can also be verified without the tool -->
+    <Component Id="RegistryMarker" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKLM" Key="Software\MsiRemoteUninstallSamples\$(var.PkgName)"
+                     Name="Version" Value="$(var.PkgVersion)" Type="string" KeyPath="yes" />
+      <RegistryValue Root="HKLM" Key="Software\MsiRemoteUninstallSamples\$(var.PkgName)"
+                     Name="Behavior" Value="$(var.PkgBehavior)" Type="string" />
+    </Component>
+
+    <Feature Id="Main">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="RegistryMarker" />
+    </Feature>
+
+<?if $(var.PkgBehavior) = "RebootRequired" ?>
+    <InstallExecuteSequence>
+      <ScheduleReboot After="InstallFinalize" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+<?endif?>
+
+<?if $(var.PkgBehavior) = "FailingUninstall" ?>
+    <CustomAction Id="FailUninstall"
+                  Error="[ProductName] refuses to uninstall (test package for MSI1603). Pass FORCE_UNINSTALL=1 to remove it." />
+    <InstallExecuteSequence>
+      <Custom Action="FailUninstall" Before="InstallInitialize"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND NOT FORCE_UNINSTALL" />
+    </InstallExecuteSequence>
+<?endif?>
+
+<?if $(var.PkgBehavior) = "SlowUninstall" ?>
+    <CustomAction Id="SlowUninstall"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[%ComSpec]&quot; /c ping -n 150 127.0.0.1"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="SlowUninstall" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+<?endif?>
+
+  </Package>
+</Wix>

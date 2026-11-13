@@ -1,10 +1,13 @@
 <#
 .SYNOPSIS
-    Regenerates ERROR-CODES.md and the error catalog embedded in
-    Uninstall-RemoteMsi.v2.ps1 from dotnet/MsiRemoteUninstall/Errors.fs.
+    Regenerates everything derived from the error catalog in dotnet/MsiRemoteUninstall/Errors.fs:
+      * ERROR-CODES.md
+      * shared/error-catalog.json          (embedded into the C# .NET Framework tool)
+      * the catalog embedded in Uninstall-RemoteMsi.v2.ps1
 
 .DESCRIPTION
-    Run this after editing Errors.fs. The unit tests fail if either file is out of date.
+    Run this after editing Errors.fs, then rebuild the C# solution (netfx). The unit tests fail if
+    any of these files is out of date.
 #>
 $ErrorActionPreference = 'Stop'
 $root    = Split-Path -Parent $PSScriptRoot
@@ -17,6 +20,7 @@ if ($LASTEXITCODE) { throw "dotnet run failed ($LASTEXITCODE)" }
 
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText((Join-Path $root 'ERROR-CODES.md'), $markdown.Replace("`r`n", "`n"), $utf8)
+[IO.File]::WriteAllText((Join-Path $root 'shared\error-catalog.json'), $json.Replace("`r`n", "`n") + "`n", $utf8)
 
 $scriptPath = Join-Path $root 'Uninstall-RemoteMsi.v2.ps1'
 $script = [IO.File]::ReadAllText($scriptPath)
@@ -25,4 +29,4 @@ if ($script -notmatch $pattern) { throw 'Catalog block not found in Uninstall-Re
 $script = [regex]::Replace($script, $pattern, { param($m) $m.Groups[1].Value + $json.Replace("`r`n", "`n") + $m.Groups[2].Value })
 [IO.File]::WriteAllText($scriptPath, $script, $utf8)
 
-Write-Host 'ERROR-CODES.md and the catalog in Uninstall-RemoteMsi.v2.ps1 were regenerated.' -ForegroundColor Green
+Write-Host 'ERROR-CODES.md, shared\error-catalog.json and the catalog in Uninstall-RemoteMsi.v2.ps1 were regenerated.' -ForegroundColor Green

@@ -69,6 +69,12 @@ let ``PowerShell v2 embedded catalog equals the .NET catalog`` () =
     let normalise (s: string) = JsonDocument.Parse(s).RootElement.ToString()
     Assert.Equal(normalise (json ()), normalise m.Groups.[1].Value)
 
+[<Fact>]
+let ``shared/error-catalog.json (used by the C# tool) equals the .NET catalog`` () =
+    let file = File.ReadAllText(Path.Combine(repoRoot, "shared", "error-catalog.json"))
+    let normalise (s: string) = JsonDocument.Parse(s).RootElement.ToString()
+    Assert.Equal(normalise (json ()), normalise file)
+
 // ---------------------------------------------------------------- classifier
 
 [<Theory>]

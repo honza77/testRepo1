@@ -1,0 +1,29 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <!--
+    One WiX project, built several times with different properties to produce the sample MSIs
+    (see ..\Build-SampleMsis.ps1). Requires Windows (WiX uses the Windows Installer APIs).
+
+    Properties (pass with -p:Name=Value):
+      PkgName          Product name shown in Programs and Features
+      PkgManufacturer  Publisher
+      PkgVersion       x.y.z
+      PkgUpgradeCode   GUID; same code = same product family (major upgrades)
+      PkgBehavior      Normal | RebootRequired | FailingUninstall | SlowUninstall
+      PkgAppDir        Folder with the files to install (the built HelloWorld app)
+      OutputName       MSI file name without extension
+      Platform         x64 (default) or x86
+  -->
+  <PropertyGroup>
+    <PkgName Condition="'$(PkgName)' == ''">Contoso HelloWorld</PkgName>
+    <PkgManufacturer Condition="'$(PkgManufacturer)' == ''">Contoso</PkgManufacturer>
+    <PkgVersion Condition="'$(PkgVersion)' == ''">1.0.0</PkgVersion>
+    <PkgUpgradeCode Condition="'$(PkgUpgradeCode)' == ''">{6F1D0C2E-6A55-4C8E-9C0B-6B1D5B3E1A01}</PkgUpgradeCode>
+    <PkgBehavior Condition="'$(PkgBehavior)' == ''">Normal</PkgBehavior>
+    <PkgAppDir Condition="'$(PkgAppDir)' == ''">$(MSBuildThisFileDirectory)..\out\apps\HelloWorld.CSharp</PkgAppDir>
+    <OutputName Condition="'$(OutputName)' == ''">Contoso.HelloWorld</OutputName>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <!-- separate intermediate folder per variant, so variants never reuse each other's compiled output -->
+    <IntermediateOutputPath>obj\$(Configuration)\$(OutputName)\</IntermediateOutputPath>
+    <DefineConstants>PkgName=$(PkgName);PkgManufacturer=$(PkgManufacturer);PkgVersion=$(PkgVersion);PkgUpgradeCode=$(PkgUpgradeCode);PkgBehavior=$(PkgBehavior);PkgAppDir=$(PkgAppDir)</DefineConstants>
+  </PropertyGroup>
+</Project>

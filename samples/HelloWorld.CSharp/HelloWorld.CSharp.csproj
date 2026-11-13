@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Tiny console app that the sample MSIs install. .NET Framework 4.8.1 runs on any
+       current Windows Server without installing a runtime. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net481</TargetFramework>
+    <AssemblyName>HelloWorld</AssemblyName>
+    <RootNamespace>HelloWorld</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>HelloWorld (C#)</Product>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- lets the project build without the .NET Framework targeting pack (e.g. on build agents / Linux) -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
