@@ -11,6 +11,7 @@ Tools to uninstall, list (and for testing, install) MSI products on remote Windo
 | Sample apps + test MSIs (WiX) | [`samples/`](samples/README.md) | | | | |
 
 All error codes, explanations and fixes: [ERROR-CODES.md](ERROR-CODES.md).
+Project state, decisions and open items (hand-off notes): [PROJECT-NOTES.md](PROJECT-NOTES.md).
 
 ## PowerShell script
 
