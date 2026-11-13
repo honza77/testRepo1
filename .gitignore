@@ -5,3 +5,4 @@ TestResults/
 .vs/
 MsiInventory_*.csv
 MsiUninstallReport_*.csv
+MsiInstallReport_*.csv

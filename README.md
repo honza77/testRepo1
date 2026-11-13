@@ -13,6 +13,26 @@ Tools to uninstall, list (and for testing, install) MSI products on remote Windo
 All error codes, explanations and fixes: [ERROR-CODES.md](ERROR-CODES.md).
 Project state, decisions and open items (hand-off notes): [PROJECT-NOTES.md](PROJECT-NOTES.md).
 
+## PowerShell version
+
+All PowerShell scripts target **Windows PowerShell 5.1** (they start with `#Requires -Version 5.1`)
+and also run in PowerShell 7. They use no PowerShell 6/7-only syntax, cmdlets, parameters or .NET
+APIs, and are plain ASCII, so the 5.1 encoding issue with BOM-less UTF-8 files doesn't apply.
+`tests/powershell/` checks both:
+
+```powershell
+# Windows PowerShell 5.1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\powershell\Run-Tests.ps1
+# PowerShell 7 (any OS)
+pwsh -NoProfile -File ./tests/powershell/Run-Tests.ps1
+```
+
+`Run-Tests.ps1` runs both uninstall scripts against a fake server. `Mocks.ps1` replaces
+`Invoke-Command`, `Get-ItemProperty` and `Start-Process` with five fake products whose msiexec returns
+0, 3010, 1603, a 32-bit success and a hang. The runner checks statuses, error codes, `-WhatIf`,
+filters and process exit codes, then runs `Test-Ps51Compat.ps1`, a static check for PowerShell
+6/7-only constructs.
+
 ## PowerShell script
 
 `Uninstall-RemoteMsi.ps1` uninstalls MSI products from a list of remote Windows servers.

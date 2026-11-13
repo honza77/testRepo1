@@ -16,6 +16,7 @@ installed there. The two .NET tools can also **install** MSIs, to prepare test s
 | F# / .NET 8 | `dotnet/` (`MsiRemoteUninstall.sln`) | yes | yes | yes | yes |
 | C# / .NET Framework 4.8.1 | `netfx/` (`MsiRemoteUninstall.NetFx.sln`) | yes | yes | yes | yes |
 | Test MSIs (WiX v5) | `samples/` | | | | |
+| PowerShell tests | `tests/powershell/` | mocked scenarios + 5.1 compatibility check | | | |
 
 Per-tool documentation: `README.md`, `dotnet/README.md`, `netfx/README.md`, `samples/README.md`,
 `ERROR-CODES.md`.
@@ -104,12 +105,20 @@ cd samples && ./Build-SampleMsis.ps1
 ```
 
 Last known state: **F# 113 tests and C# 70 tests pass**. Both solutions build with no warnings.
+**PowerShell: `tests/powershell/Run-Tests.ps1` passes 20/20 in PowerShell 7.4.** It has not yet
+been run in real Windows PowerShell 5.1.
+
+```bash
+pwsh -NoProfile -File tests/powershell/Run-Tests.ps1        # mocked scenarios + 5.1 compatibility check
+```
 
 Cloud-session environment notes:
 - The container is Linux. The .NET 8 SDK was installed with `apt-get install dotnet-sdk-8.0` and has
   to be installed again in a new session.
-- PowerShell (`pwsh`) is **not** available. Downloading it from GitHub was blocked, so no `.ps1` file
-  has ever been run or syntax-checked.
+- PowerShell is not preinstalled. Install it as a .NET global tool from NuGet (works):
+  `dotnet tool install --global PowerShell --version 7.4.6`, then `export PATH="$PATH:$HOME/.dotnet/tools"`.
+  The PowerShell Gallery (www.powershellgallery.com) is blocked by the network policy, so
+  PSScriptAnalyzer is not available. `tests/powershell/Test-Ps51Compat.ps1` is the replacement.
 - WiX runs on Linux only far enough to compile the source: it accepted the `Package.wxs` XML and all
   four variants, then failed at a Windows-only check. MSIs must be built on Windows.
 
@@ -119,12 +128,17 @@ Cloud-session environment notes:
    uninstall, install, upload, admin share and the exit-code registry trick.
 2. **The C# `.exe` has never been started.** It only builds. Expected runtime dependency:
    `System.Management.Automation` 3.0.0.0 from the GAC (Windows PowerShell 5.1).
-3. **The `.ps1` scripts have never been run:** `Uninstall-RemoteMsi.ps1`, `Uninstall-RemoteMsi.v2.ps1`,
-   `dotnet/Update-ErrorDocs.ps1`, `samples/Build-SampleMsis.ps1` and `samples/Start-PackageServer.ps1`.
-   Points worth a close look in v2:
-   - the PowerShell class `MruError` and its use in `catch [MruError]`
-   - the closures in list-mode filtering (`GetNewClosure`)
-   - the `Test-Preflight` task handling
+3. **The `.ps1` scripts have been run in PowerShell 7.4 on Linux only, never in Windows PowerShell 5.1.**
+   - Both uninstall scripts: help, input errors, the check before connecting, and (with
+     `tests/powershell/Mocks.ps1`) every uninstall / list result.
+   - `Update-ErrorDocs.ps1`: works.
+   - `Start-PackageServer.ps1`: works, and the F# tool downloads from it.
+   - `Build-SampleMsis.ps1`: builds the apps, then stops at WiX (Windows only).
+   - Next step: run `tests/powershell/Run-Tests.ps1` with `powershell.exe` 5.1 on Windows.
+   - Fixed while testing: v2 crashed (MRU999) when every server failed the check before connecting
+     (`@($failedRows)` on a `List[object]`), and when `Invoke-Command` failed as a whole.
+   - The `MruError` PowerShell class was replaced by a plain exception with `Data['MruCode']`,
+     because PowerShell classes in 5.1 are not reloaded after an edit in the same session.
 4. **The sample MSIs have never been built or installed.** Points worth a close look:
    - the `<Files>` element (WiX v5)
    - `ScheduleReboot` on uninstall should give 3010

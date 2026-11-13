@@ -126,6 +126,7 @@
       * The account must be a local administrator on the target servers.
     Input files: blank lines and lines starting with '#' are ignored.
 #>
+#Requires -Version 5.1
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string[]] $ComputerName,

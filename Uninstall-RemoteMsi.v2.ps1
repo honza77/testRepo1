@@ -111,6 +111,7 @@
     The error catalog below is generated from dotnet/MsiRemoteUninstall/Errors.fs
     (MsiRemoteUninstall --errors json) - edit it there, not here.
 #>
+#Requires -Version 5.1
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string[]] $ComputerName,
@@ -992,16 +993,26 @@ function Show-ErrorList {
     foreach ($x in $script:Catalog.ExitCodes) { Write-Host ('  {0,-3} {1,-25} {2}' -f $x.ExitCode, $x.Title, $x.Description) }
 }
 
-# Terminating error with catalog code: carries code + detail to the top-level handler.
-class MruError : System.Exception {
-    [string] $Code
-    [string] $Detail
-    MruError([string] $code, [string] $detail) : base("[$code] $detail") { $this.Code = $code; $this.Detail = $detail }
-}
-
+# Terminating error with catalog code: a plain System.Exception that carries code + detail in
+# its Data dictionary. (No PowerShell class on purpose: classes in Windows PowerShell 5.1 are not
+# reloaded when the script is edited and run again in the same session.)
 function Stop-Mru {
     param([string] $Code, [string] $Detail)
-    throw [MruError]::new($Code, $Detail)
+    $ex = New-Object System.Exception ("[{0}] {1}" -f $Code, $Detail)
+    $ex.Data['MruCode'] = $Code
+    $ex.Data['MruDetail'] = $Detail
+    throw $ex
+}
+
+# Returns the exception thrown by Stop-Mru (also when wrapped by PowerShell), or $null.
+function Get-MruError {
+    param([System.Management.Automation.ErrorRecord] $Record)
+    $ex = $Record.Exception
+    while ($ex) {
+        if ($ex.Data -and $ex.Data.Contains('MruCode')) { return $ex }
+        $ex = $ex.InnerException
+    }
+    $null
 }
 
 function Write-CodedMessage {
@@ -1062,6 +1073,8 @@ function Get-ErrorRecordCode {
     while ($ex -is [System.AggregateException] -and $ex.InnerException) { $ex = $ex.InnerException }
     $detail = Get-FirstLine $ex.Message
     if ($detail -match '^(MRU\d{3}):\s*(.*)$') { return @($Matches[1], $Matches[2]) }
+    # PowerShell 7 on Linux / macOS has no WinRM client
+    if ($detail -match 'WSMan client library') { return @('MRU503', $detail) }
     if ($ex -is [System.Management.Automation.Remoting.PSRemotingTransportException]) {
         return @((Get-WinRmErrorCode -Code $ex.ErrorCode -Message $ex.Message), $detail)
     }
@@ -1398,8 +1411,8 @@ function Invoke-Main {
                 $cred = Get-Credential @p
             }
         }
-        catch [MruError] { throw }
         catch {
+            if (Get-MruError $_) { throw }
             # no interactive host (scheduled task, -NonInteractive, service, ...)
             Stop-Mru 'MRU204' (Get-FirstLine $_.Exception.Message)
         }
@@ -1448,6 +1461,7 @@ function Invoke-Main {
     }
 
     $remoteErrors = @()
+    $invokeFailed = $false
     $output = @()
     if ($targets.Count -gt 0) {
         Write-Host ("Connecting to {0} server(s)..." -f $targets.Count) -ForegroundColor Cyan
@@ -1461,7 +1475,9 @@ function Invoke-Main {
             }
         }
         catch {
-            # parameter-level failures of Invoke-Command (e.g. invalid authentication combination)
+            # Invoke-Command failed as a whole (e.g. invalid authentication combination, no WinRM
+            # client): every target gets a row, and $remoteErrors repeats this error - skip it below.
+            $invokeFailed = $true
             $code, $detail = Get-ErrorRecordCode -Record $_ -Fallback 'MRU399'
             foreach ($s in $targets) {
                 Write-CodedMessage -Computer $s -Code $code -Detail $detail
@@ -1469,8 +1485,14 @@ function Invoke-Main {
             }
         }
     }
+    if ($invokeFailed) { $remoteErrors = @() }
 
     foreach ($err in $remoteErrors) {
+        # -ErrorVariable can also hold plain exceptions; make every entry an ErrorRecord
+        if ($err -is [System.Exception]) {
+            $err = New-Object System.Management.Automation.ErrorRecord ($err, 'RemoteError', 'NotSpecified', $null)
+        }
+        if ($err -isnot [System.Management.Automation.ErrorRecord]) { continue }
         $target = $null
         if ($err.PSObject.Properties['TargetObject'] -and $err.TargetObject) { $target = [string]$err.TargetObject }
         if (-not $target -and $err.PSObject.Properties['OriginInfo'] -and $err.OriginInfo) { $target = $err.OriginInfo.PSComputerName }
@@ -1555,7 +1577,7 @@ function Invoke-Main {
         }
         if ($r.Status -in 'Failed', 'ExecutionError') { Write-CodedMessage -Computer $r.ComputerName -Code $r.ErrorCode -Detail ("{0} {1}" -f $r.DisplayName, $r.Message).Trim() }
         $r
-    }) + @($failedRows)
+    }) + $failedRows.ToArray()   # not @($failedRows): fails for List[object] of PSObjects in PowerShell 7.4
 
     $results | Sort-Object ComputerName, Msi |
         Format-Table ComputerName, Msi, DisplayName, Version, Status, ExitCode, ErrorCode -AutoSize | Out-Host
@@ -1575,32 +1597,36 @@ $script:ExitCode = $ExitOk
 try {
     Invoke-Main
 }
-catch [MruError] {
-    $err = $_.Exception
-    $info = Get-ErrorInfo $err.Code
-    if (-not $info) { $info = Get-ErrorInfo 'MRU999' }
-    if ($err.Code -eq 'MRU502') {
-        Write-Host ("WARNING: [{0}] {1}: {2}" -f $err.Code, $info.Title, $err.Detail) -ForegroundColor Yellow
-        $script:ExitCode = $ExitAborted
-    }
-    else {
-        Write-Host ("ERROR: [{0}] {1}: {2}" -f $err.Code, $info.Title, $err.Detail) -ForegroundColor Red
-        Write-Host ''
-        Show-ErrorExplanation -Info $info
-        $script:ExitCode = switch ($info.Category) {
-            'Input'       { $ExitInvalidInput }
-            'Credentials' { $ExitCredentials }
-            default       { $ExitPartialFailure }
+catch {
+    $mru = Get-MruError $_
+    if ($mru) {
+        $code = $mru.Data['MruCode']
+        $detail = $mru.Data['MruDetail']
+        $info = Get-ErrorInfo $code
+        if (-not $info) { $info = Get-ErrorInfo 'MRU999' }
+        if ($code -eq 'MRU502') {
+            Write-Host ("WARNING: [{0}] {1}: {2}" -f $code, $info.Title, $detail) -ForegroundColor Yellow
+            $script:ExitCode = $ExitAborted
+        }
+        else {
+            Write-Host ("ERROR: [{0}] {1}: {2}" -f $code, $info.Title, $detail) -ForegroundColor Red
+            Write-Host ''
+            Show-ErrorExplanation -Info $info
+            $script:ExitCode = switch ($info.Category) {
+                'Input'       { $ExitInvalidInput }
+                'Credentials' { $ExitCredentials }
+                default       { $ExitPartialFailure }
+            }
         }
     }
-}
-catch {
-    $detail = Get-FirstLine $_.Exception.Message
-    Write-Host ("ERROR: [MRU999] {0}: {1}" -f (Get-ErrorInfo 'MRU999').Title, $detail) -ForegroundColor Red
-    Write-Host ("At: {0}" -f $_.InvocationInfo.PositionMessage)
-    Write-Host ''
-    Show-ErrorExplanation -Info (Get-ErrorInfo 'MRU999')
-    $script:ExitCode = $ExitInternal
+    else {
+        $detail = Get-FirstLine $_.Exception.Message
+        Write-Host ("ERROR: [MRU999] {0}: {1}" -f (Get-ErrorInfo 'MRU999').Title, $detail) -ForegroundColor Red
+        Write-Host ("At: {0}" -f $_.InvocationInfo.PositionMessage)
+        Write-Host ''
+        Show-ErrorExplanation -Info (Get-ErrorInfo 'MRU999')
+        $script:ExitCode = $ExitInternal
+    }
 }
 exit $script:ExitCode
 #endregion

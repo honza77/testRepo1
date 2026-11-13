@@ -24,6 +24,7 @@
 .EXAMPLE
     .\Build-SampleMsis.ps1
 #>
+#Requires -Version 5.1
 [CmdletBinding()]
 param(
     [string] $OutDir = (Join-Path $PSScriptRoot 'out'),

@@ -16,6 +16,7 @@
     .\Start-PackageServer.ps1 -LocalOnly
     MsiRemoteUninstall -c SRV01 -i Contoso.HelloWorld-1.0.0 -s http://localhost:8080/msi/
 #>
+#Requires -Version 5.1
 [CmdletBinding()]
 param(
     [string] $Folder = (Join-Path $PSScriptRoot 'out\msi'),

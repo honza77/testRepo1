@@ -9,6 +9,7 @@
     Run this after editing Errors.fs, then rebuild the C# solution (netfx). The unit tests fail if
     any of these files is out of date.
 #>
+#Requires -Version 5.1
 $ErrorActionPreference = 'Stop'
 $root    = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $PSScriptRoot 'MsiRemoteUninstall'
