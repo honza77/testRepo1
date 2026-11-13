@@ -21,8 +21,13 @@ type IRemoteSession =
     abstract ComputerName: string
     /// MSI products from the 64-bit and 32-bit registry Uninstall keys.
     abstract GetInstalledProducts: unit -> InstalledProduct list
-    /// Runs "msiexec /x {code} /qn /norestart /l*v logFile" on the server and returns its exit code.
-    abstract Uninstall: productCode: string * logFolder: string * logFile: string -> int
+    /// Runs msiexec.exe with the given argument string on the server (creating logFolder first)
+    /// and returns its exit code.
+    abstract RunMsiexec: arguments: string * logFolder: string -> int
+    /// Copies a local file to an absolute local path on the server (e.g. C:\Windows\Temp\x.msi).
+    abstract UploadFile: localPath: string * remotePath: string -> unit
+    /// Deletes a file on the server (no error if it does not exist).
+    abstract DeleteFile: remotePath: string -> unit
 
 /// Registry paths (relative to HKLM) scanned for installed products.
 let uninstallKeys =

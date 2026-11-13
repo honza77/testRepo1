@@ -96,7 +96,7 @@ let printCodeSummary (codes: string list) =
 let private uninstallHeaders =
     [ "ComputerName"; "Msi"; "DisplayName"; "Version"; "ProductCode"; "Status"; "ExitCode"; "ErrorCode"; "Message"; "LogFile" ]
 
-let private uninstallRow (r: UninstallResult) =
+let private uninstallRow (r: OperationResult) =
     [ r.ComputerName
       r.Msi
       r.DisplayName
@@ -112,7 +112,7 @@ let private uninstallRow (r: UninstallResult) =
 
 /// Shows the results table, writes the CSV, prints the status and error-code summaries.
 /// Returns false if the CSV could not be written.
-let showUninstallResults (results: UninstallResult list) (reportPath: string) : bool =
+let showOperationResults (results: OperationResult list) (reportPath: string) : bool =
     let sorted = results |> List.sortBy (fun r -> r.ComputerName.ToUpperInvariant(), r.Msi)
     printTable
         [ "ComputerName"; "Msi"; "DisplayName"; "Version"; "Status"; "ExitCode"; "ErrorCode"; "Message" ]

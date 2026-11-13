@@ -47,7 +47,7 @@ let private e code cat sev title applies expl rem =
 let catalog: ErrorInfo list =
     [
       // ------------------------------------------------------------ 1xx input
-      e "MRU101" Category.Input Severity.Error "Invalid command-line argument" ".NET app"
+      e "MRU101" Category.Input Severity.Error "Invalid command-line argument" ".NET apps"
           "An argument was not recognised, is missing its value, or its value is outside the allowed range. (In the PowerShell script, PowerShell itself validates parameters before the script starts.)"
           [ "Compare the spelling with the help: MsiRemoteUninstall --help."
             "Put values that contain spaces or commas in quotes, e.g. -m \"Contoso Agent*\"."
@@ -82,6 +82,27 @@ let catalog: ErrorInfo list =
       e "MRU108" Category.Input Severity.Warning "Option ignored" "All"
           "An option was given that has no effect in this combination (for example --filter without --list, or --ssl with the WMI transport). The run continues without it."
           [ "Remove the option, or add the option it depends on (see the warning text)." ]
+      e "MRU109" Category.Input Severity.Error "Conflicting operation modes" ".NET apps"
+          "More than one operation was requested at the same time. A run either uninstalls (--msi), lists (--list) or installs (--install)."
+          [ "Use only one of --msi / --msi-list, --list, or --install / --install-list per run."
+            "To test a full cycle, run the tool twice: first with --install, then with --msi." ]
+      e "MRU110" Category.Input Severity.Error "Package not found" ".NET apps"
+          "An MSI package given with --install / --install-list does not exist in the package source (folder, share or URL), or a wildcard matched no file."
+          [ "Check the file name; the .msi extension is added automatically if missing."
+            "Check --package-source: relative names are looked up there (default: the current directory)."
+            "List the folder to see what is available, e.g. dir \\\\fileserver\\packages\\*.msi."
+            "For a URL source, open the full URL in a browser to verify it exists." ]
+      e "MRU111" Category.Input Severity.Error "Package source not accessible" ".NET apps"
+          "The package source folder, share or web server could not be accessed, or a download failed."
+          [ "Check the path / URL in --package-source for typos."
+            "For a share: check that your account can open it in Explorer (\\\\server\\share) and that the server is reachable."
+            "For a URL: check proxy settings, TLS and that the web server returns the file (HTTP 200)."
+            "Copy the packages to a local folder and use that as --package-source." ]
+      e "MRU112" Category.Input Severity.Error "Invalid MSI property" ".NET apps"
+          "A --msi-property value is not in the form NAME=VALUE, or the value contains characters that cannot be passed safely to msiexec (a double quote; with the WMI transport also ! and %)."
+          [ "Use the form NAME=VALUE, e.g. --msi-property INSTALLFOLDER=D:\\Apps\\Hello. Public property names are UPPERCASE."
+            "Quote the whole argument if the value contains spaces: --msi-property \"COMPANY=Contoso Ltd\"."
+            "Avoid double quotes in values; with -t wmi also avoid ! and %, or use the psremoting transport." ]
 
       // ------------------------------------------------------------ 2xx credentials
       e "MRU201" Category.Credentials Severity.Error "No user name entered / credential prompt cancelled" "All"
@@ -93,7 +114,7 @@ let catalog: ErrorInfo list =
           "The password was empty. Empty passwords cannot be used for remote management."
           [ "Run again and type the password (it is not shown while typing)."
             "For unattended runs use --password-env VAR (.NET) or pass a prepared -Credential object (PowerShell)." ]
-      e "MRU203" Category.Credentials Severity.Error "Password environment variable missing" ".NET app"
+      e "MRU203" Category.Credentials Severity.Error "Password environment variable missing" ".NET apps"
           "--password-env was given, but that environment variable does not exist or is empty in this process."
           [ "Set the variable in the same shell before starting the tool, e.g. PowerShell: $env:MRU_PW = '...'; cmd: set MRU_PW=..."
             "Check the variable name passed to --password-env (no $ or % around it)." ]
@@ -205,6 +226,16 @@ let catalog: ErrorInfo list =
             "Run again - products that were already removed are reported as NotFound, so re-running is safe."
             "Check the server's event logs (Application, System, Microsoft-Windows-WinRM/Operational)."
             "If the session broke, check whether the server rebooted (some uninstalls force a reboot)." ]
+      e "MRU406" Category.RemoteOperation Severity.Error "Package could not be copied to the server" ".NET apps"
+          "The MSI package could not be transferred to the staging folder on the server. PowerShell Remoting copies the file through the WinRM session; the WMI transport copies it through the administrative share (\\\\server\\C$)."
+          [ "Check free disk space on the server and that the staging folder (--remote-staging-folder) is a valid local path there."
+            "WMI transport: the admin share must be reachable - TCP port 445 open, 'File and Printer Sharing' enabled, admin shares not disabled (AutoShareServer), and the account must be a local administrator."
+            "WMI transport, Windows error 1219: you already have a connection to that server with other credentials (e.g. a mapped drive) - disconnect it (net use \\\\server\\C$ /delete) or use the same account."
+            "Alternatively let the server read the package itself: --source-mode direct with a UNC path (see MSI1619 for the double-hop limitation)." ]
+      e "MRU407" Category.RemoteOperation Severity.Warning "Staged package could not be removed" ".NET apps"
+          "After installing, the copied MSI could not be deleted from the staging folder on the server. The installation itself is not affected (Windows Installer keeps its own cached copy)."
+          [ "Delete the file manually from the staging folder on the server (path in the message)."
+            "Use --keep-staged if you want to keep the copies on purpose." ]
 
       // ------------------------------------------------------------ 5xx local
       e "MRU501" Category.Local Severity.Warning "Report could not be written" "All"
@@ -216,7 +247,11 @@ let catalog: ErrorInfo list =
           "The confirmation question was answered with No, so nothing was uninstalled."
           [ "Run again and confirm with 'y', or skip the question with -y / --yes (.NET) or -Confirm:$false (PowerShell)."
             "Use --what-if / -WhatIf first to see what would be removed." ]
-      e "MRU503" Category.Local Severity.Error "Remote management not available on this OS" ".NET app"
+      e "MRU504" Category.Local Severity.Warning "Package details could not be read" ".NET apps"
+          "The ProductName / ProductCode / version of a package could not be read before installing (msi.dll is only available on Windows, or the file is not a valid MSI). The package is still installed, but the tool cannot detect whether it is already installed."
+          [ "Run the tool on Windows."
+            "Check that the file is a valid, complete MSI (open it with Orca or compare its size with the original)." ]
+      e "MRU503" Category.Local Severity.Error "Remote management not available on this OS" ".NET apps"
           "The WinRM client and WMI/DCOM APIs used by the tool exist only on Windows. This happens when the .NET tool is started on Linux or macOS."
           [ "Run the tool on Windows 10/11 or Windows Server 2016 or newer."
             "Or use the PowerShell script from a Windows machine." ]
@@ -232,7 +267,7 @@ let catalog: ErrorInfo list =
           [ "Read the msiexec log on the server (path in the report) for the reason."
             "Check the vendor's documentation for prerequisites for uninstalling (e.g. a removal password or a service that must be stopped)." ]
       e "MSI1603" Category.Msi Severity.Error "Fatal error during uninstall" "All"
-          "A generic failure inside the uninstall. The most common causes: a custom action of the product failed, files or services are in use, a pending reboot, or missing permissions inside the product's own uninstall logic."
+          "A generic failure inside the install or uninstall (for installs also: a newer version is already installed and downgrades are blocked). The most common causes: a custom action of the product failed, files or services are in use, a pending reboot, or missing permissions inside the product's own uninstall logic."
           [ "Open the verbose msiexec log (path in the report) and search for 'Return value 3' - the lines just above it name the failing action."
             "Stop the product's processes and services, then retry."
             "Reboot the server (clears pending file operations) and retry."
@@ -251,8 +286,9 @@ let catalog: ErrorInfo list =
             "Check on the server: Get-Process msiexec, and Windows Update / deployment agent activity."
             "If an msiexec process is hung, stop it or reboot the server." ]
       e "MSI1619" Category.Msi Severity.Error "Installation package could not be opened" "All"
-          "The cached MSI package of the product could not be opened - it is missing, inaccessible or corrupt."
-          [ "Same as MSI1612: restore the original .msi of the same version, or uninstall using the package path."
+          "The MSI package could not be opened - it is missing, inaccessible or corrupt. When installing with --source-mode direct from a share, this usually means the server cannot read the share: remote sessions cannot pass your credentials on to a third machine (the 'double hop' problem)."
+          [ "Installing with --source-mode direct: use --source-mode copy (default) instead, or grant the server's computer account (DOMAIN\\SERVER$) read access to the share."
+            "Uninstalling: same as MSI1612 - restore the original .msi of the same version, or uninstall using the package path."
             "Check antivirus quarantine for C:\\Windows\\Installer\\*.msi files." ]
       e "MSI1620" Category.Msi Severity.Error "Installation package is invalid" "All"
           "The cached MSI package exists but is not a valid Windows Installer package (corrupt)."
@@ -274,6 +310,10 @@ let catalog: ErrorInfo list =
           "The package is not supported on this processor architecture / platform."
           [ "Check the msiexec log; this is unusual for an uninstall and may indicate a corrupt product registration."
             "Use the vendor's cleanup tool." ]
+      e "MSI1638" Category.Msi Severity.Error "Another version is already installed" "All"
+          "Installing failed because another version of this product (same UpgradeCode, without an upgrade rule allowing it) is already installed."
+          [ "Uninstall the other version first (list it with --list to get its product code)."
+            "Use a package version that is built as a major upgrade of the installed one." ]
       e "MSI1639" Category.Msi Severity.Error "Invalid command line argument" "All"
           "msiexec rejected its command line."
           [ "Check the remote log folder path (--remote-log-folder / -RemoteLogFolder) for unusual characters such as quotes."

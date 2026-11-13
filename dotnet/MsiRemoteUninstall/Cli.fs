@@ -4,6 +4,7 @@ module MsiRemoteUninstall.Cli
 open System
 open MsiRemoteUninstall.Domain
 open MsiRemoteUninstall.Errors
+open MsiRemoteUninstall.Packages
 
 [<RequireQualifiedAccess>]
 type Transport =
@@ -26,6 +27,13 @@ type Options =
       Msis: string list
       MsiListFiles: string list
       ListInstalled: bool
+      InstallPackages: string list
+      InstallListFiles: string list
+      PackageSource: string option
+      SourceMode: SourceMode
+      MsiProperties: string list
+      RemoteStagingFolder: string
+      KeepStaged: bool
       Filters: string list
       FilterMode: FilterMode
       Transport: Transport
@@ -55,6 +63,13 @@ let defaults =
       Msis = []
       MsiListFiles = []
       ListInstalled = false
+      InstallPackages = []
+      InstallListFiles = []
+      PackageSource = None
+      SourceMode = SourceMode.Copy
+      MsiProperties = []
+      RemoteStagingFolder = @"C:\Windows\Temp\MsiRemoteInstall"
+      KeepStaged = false
       Filters = []
       FilterMode = FilterMode.Substring
       Transport = Transport.PsRemoting
@@ -78,11 +93,12 @@ let defaults =
 
 let usage =
     """
-MsiRemoteUninstall - uninstall (or list) MSI products on remote Windows servers.
+MsiRemoteUninstall - uninstall, list or install MSI products on remote Windows servers.
 
 USAGE
-  MsiRemoteUninstall [servers] [msis] [options]
-  MsiRemoteUninstall [servers] --list [--filter <pattern>...] [options]
+  MsiRemoteUninstall [servers] [msis] [options]                            uninstall
+  MsiRemoteUninstall [servers] --list [--filter <pattern>...] [options]    list / search
+  MsiRemoteUninstall [servers] --install <package>... [options]            install
 
 SERVERS (at least one; combined and de-duplicated)
   -c, --computer <name>        Server host name. Repeatable; comma-separated allowed.
@@ -100,6 +116,24 @@ LIST / SEARCH MODE (nothing is uninstalled)
                                  substring: field must contain the text
                                  wildcard : * ? [a-z], must match the WHOLE field (use *text*)
                                  regex    : .NET regular expression, matches anywhere unless anchored
+
+INSTALL MODE (for preparing test servers)
+  -i, --install <package>      MSI to install: file name (looked up in --package-source, .msi
+                               optional, wildcards like *.msi allowed), full path, UNC path or
+                               http(s) URL. Repeatable; installed in the given order.
+      --install-list <file>    Text file, one package per line.
+  -s, --package-source <src>   Where relative package names are looked up: local folder,
+                               UNC share (\\server\share\msi) or base URL (https://host/msi/).
+                               Default: current directory.
+      --source-mode <mode>     copy (default): copy the package to each server, then install.
+                               direct: msiexec on the server opens the path itself (UNC path or a
+                               path local to the server; see MSI1619 about the double hop).
+      --remote-staging-folder <p>  Where packages are copied on the server
+                               (default C:\Windows\Temp\MsiRemoteInstall).
+      --keep-staged            Do not delete the copied package after installing.
+  -p, --msi-property <N=V>     Public MSI property passed to msiexec, e.g. INSTALLFOLDER=D:\Apps.
+                               Repeatable. Also applied when uninstalling.
+  Products that are already installed (same ProductCode) are skipped (status AlreadyInstalled).
 
 CONNECTION
   -t, --transport <name>       psremoting (default) | wmi
@@ -146,6 +180,8 @@ EXAMPLES
   MsiRemoteUninstall -c SRV01 --list --filter-mode regex -f "^Contoso (Agent|Monitor)" -u CONTOSO\admin
   MsiRemoteUninstall --computer-list servers.txt --msi-list msis.txt -t psremoting --ssl -y
   MsiRemoteUninstall --computer-list servers.txt -m {12345678-90AB-CDEF-1234-567890ABCDEF} -t wmi
+  MsiRemoteUninstall -c SRV01 --install "*.msi" -s \\fileserver\packages\test --yes
+  MsiRemoteUninstall -c SRV01 -i HelloWorld -s https://repo.contoso.local/msi/ -p INSTALLFOLDER=D:\Hello
   MsiRemoteUninstall --explain MRU307
 """
 
@@ -187,6 +223,25 @@ let parse (argv: string[]) : Options =
                 let v, t = needValue a rest
                 loop { o with MsiListFiles = o.MsiListFiles @ [ v ] } t
             | "-l" | "--list" -> loop { o with ListInstalled = true } rest
+            | "-i" | "--install" ->
+                let v, t = needValue a rest
+                loop { o with InstallPackages = o.InstallPackages @ [ v ] } t
+            | "--install-list" ->
+                let v, t = needValue a rest
+                loop { o with InstallListFiles = o.InstallListFiles @ [ v ] } t
+            | "-s" | "--package-source" ->
+                let v, t = needValue a rest
+                loop { o with PackageSource = Some v } t
+            | "--source-mode" ->
+                let v, t = needValue a rest
+                loop { o with SourceMode = parseEnum a [ "copy", SourceMode.Copy; "direct", SourceMode.Direct ] v } t
+            | "-p" | "--msi-property" ->
+                let v, t = needValue a rest
+                loop { o with MsiProperties = o.MsiProperties @ [ v ] } t
+            | "--remote-staging-folder" ->
+                let v, t = needValue a rest
+                loop { o with RemoteStagingFolder = v.TrimEnd('\\') } t
+            | "--keep-staged" -> loop { o with KeepStaged = true } rest
             | "-f" | "--filter" ->
                 let v, t = needValue a rest
                 loop { o with Filters = o.Filters @ [ v ] } t

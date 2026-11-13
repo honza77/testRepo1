@@ -9,6 +9,7 @@
     <Compile Include="DomainTests.fs" />
     <Compile Include="CliTests.fs" />
     <Compile Include="ErrorsTests.fs" />
+    <Compile Include="InstallTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

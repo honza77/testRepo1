@@ -36,20 +36,47 @@ foreach ($k in $keys) {
 }
 """
 
-let private uninstallScript =
+let private msiexecScript =
     """
-param([string] $ProductCode, [string] $LogFolder, [string] $LogFile)
+param([string] $Arguments, [string] $LogFolder)
 $ErrorActionPreference = 'Stop'
 try {
     if (-not (Test-Path -LiteralPath $LogFolder)) { New-Item -ItemType Directory -Path $LogFolder -Force | Out-Null }
-    $msiArgs = @('/x', $ProductCode, '/qn', '/norestart', '/l*v', "`"$LogFile`"")
-    $p = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru -WindowStyle Hidden
+    $p = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
 }
 catch {
     throw "MRU402: $($_.Exception.Message)"
 }
 $p.ExitCode
 """
+
+/// Writes one base64 chunk; the first chunk creates / truncates the file.
+let private uploadChunkScript =
+    """
+param([string] $Path, [string] $Data, [bool] $First)
+$ErrorActionPreference = 'Stop'
+try {
+    $dir = Split-Path -Parent $Path
+    if ($First -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $bytes = [Convert]::FromBase64String($Data)
+    $mode = if ($First) { [IO.FileMode]::Create } else { [IO.FileMode]::Append }
+    $fs = New-Object IO.FileStream($Path, $mode, [IO.FileAccess]::Write)
+    try { $fs.Write($bytes, 0, $bytes.Length) } finally { $fs.Dispose() }
+    (Get-Item -LiteralPath $Path).Length
+}
+catch {
+    throw "MRU406: $($_.Exception.Message)"
+}
+"""
+
+let private deleteScript =
+    """
+param([string] $Path)
+if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force -ErrorAction Stop }
+"""
+
+/// Size of one upload chunk (raw bytes; base64 adds a third).
+let private chunkSize = 512 * 1024
 
 let private prop (o: PSObject) (name: string) =
     match o.Properties.[name] with
@@ -129,19 +156,39 @@ type PsRemotingSession(computer: string, settings: ConnectionSettings) =
                   Architecture = prop o "Architecture" })
             |> distinctProducts
 
-        member _.Uninstall(productCode, logFolder, logFile) =
+        member _.RunMsiexec(arguments, logFolder) =
             let result =
-                invoke
-                    "MRU403"
-                    settings.Timeout
-                    uninstallScript
-                    [ "ProductCode", box productCode; "LogFolder", box logFolder; "LogFile", box logFile ]
+                invoke "MRU403" settings.Timeout msiexecScript [ "Arguments", box arguments; "LogFolder", box logFolder ]
             match result |> List.tryLast with
             | Some o when not (isNull o) ->
                 match Int32.TryParse(string o) with
                 | true, code -> code
                 | _ -> raiseMru "MRU404" (sprintf "Unexpected result from remote msiexec: '%O'" o)
             | _ -> raiseMru "MRU404" "The remote command returned no exit code."
+
+        member _.UploadFile(localPath, remotePath) =
+            use input = IO.File.OpenRead localPath
+            let buffer = Array.zeroCreate<byte> chunkSize
+            let mutable first = true
+            let mutable remoteLength = 0L
+            let mutable read = input.Read(buffer, 0, buffer.Length)
+            // an empty file still needs one (empty) chunk to be created
+            while read > 0 || first do
+                let data = Convert.ToBase64String(buffer, 0, read)
+                let result =
+                    invoke "MRU406" (TimeSpan.FromMinutes 5.0) uploadChunkScript
+                        [ "Path", box remotePath; "Data", box data; "First", box first ]
+                remoteLength <-
+                    match result |> List.tryLast with
+                    | Some o when not (isNull o) -> Convert.ToInt64(o.BaseObject)
+                    | _ -> -1L
+                first <- false
+                read <- input.Read(buffer, 0, buffer.Length)
+            if remoteLength <> input.Length then
+                raiseMru "MRU406" (sprintf "Size mismatch after upload: %d bytes local, %d bytes on the server." input.Length remoteLength)
+
+        member _.DeleteFile(remotePath) =
+            invoke "MRU407" (TimeSpan.FromMinutes 2.0) deleteScript [ "Path", box remotePath ] |> ignore
 
         member _.Dispose() =
             (try runspace.Close() with _ -> ())

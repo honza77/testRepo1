@@ -106,20 +106,42 @@ let private inventoryServer (ctx: ConnectContext) (matchers: (string -> bool) li
             logCode computer code detail
             [ { ComputerName = computer; Product = None; Error = Some(code, detail) } ]
 
+// ------------------------------------------------------------------ shared for install / uninstall
+
+let private resultRow name msi (p: InstalledProduct option) status exitCode errorCode message logFile : OperationResult =
+    { ComputerName = name
+      Msi = msi
+      DisplayName = p |> Option.map (fun p -> p.DisplayName) |> Option.defaultValue ""
+      Version = p |> Option.map (fun p -> p.Version) |> Option.defaultValue ""
+      ProductCode = p |> Option.map (fun p -> p.ProductCode) |> Option.defaultValue ""
+      Status = status
+      ExitCode = exitCode
+      ErrorCode = errorCode
+      Message = message
+      LogFile = logFile }
+
+/// Runs msiexec, retrying while another installation is in progress (1618).
+let private runMsiexecWithRetry (session: IRemoteSession) (name: string) (arguments: string) (logFolder: string) : Result<int, string * string> =
+    try
+        let rec attempt n =
+            let code = session.RunMsiexec(arguments, logFolder)
+            if code = 1618 && n < 5 then
+                Report.warn (sprintf "[%s] Another installation in progress (MSI1618), retry %d/4 in 30 s..." name n)
+                Thread.Sleep(TimeSpan.FromSeconds 30.0)
+                attempt (n + 1)
+            else
+                code
+        Ok(attempt 1)
+    with ex ->
+        Result.Error(ErrorClassifier.classify "MRU405" ex)
+
+let private logFileName (folder: string) (id: string) =
+    sprintf @"%s\%s_%s.log" folder (id.Trim('{', '}')) (DateTime.Now.ToString "yyyyMMdd_HHmmss_fff")
+
 // ------------------------------------------------------------------ uninstall mode
 
-let private uninstallServer (ctx: ConnectContext) (opts: Options) (msis: string list) (computer: string) : UninstallResult list =
-    let row name msi (p: InstalledProduct option) status exitCode errorCode message logFile =
-        { ComputerName = name
-          Msi = msi
-          DisplayName = p |> Option.map (fun p -> p.DisplayName) |> Option.defaultValue ""
-          Version = p |> Option.map (fun p -> p.Version) |> Option.defaultValue ""
-          ProductCode = p |> Option.map (fun p -> p.ProductCode) |> Option.defaultValue ""
-          Status = status
-          ExitCode = exitCode
-          ErrorCode = errorCode
-          Message = message
-          LogFile = logFile }
+let private uninstallServer (ctx: ConnectContext) (opts: Options) (props: (string * string) list) (msis: string list) (computer: string) : OperationResult list =
+    let row = resultRow
     let allMsis = String.Join("; ", msis)
 
     Report.info (sprintf "[%s] Connecting..." computer)
@@ -154,24 +176,10 @@ let private uninstallServer (ctx: ConnectContext) (opts: Options) (msis: string 
                               Report.log None (sprintf "[%s] WhatIf: would uninstall %s %s %s" name p.DisplayName p.Version p.ProductCode)
                               yield row name msi (Some p) WouldUninstall None "" "WhatIf: not uninstalled." ""
                           else
-                              let logFile =
-                                  sprintf @"%s\%s_%s.log" opts.RemoteLogFolder (p.ProductCode.Trim('{', '}')) (DateTime.Now.ToString "yyyyMMdd_HHmmss")
+                              let logFile = logFileName opts.RemoteLogFolder p.ProductCode
                               Report.log None (sprintf "[%s] Uninstalling %s %s %s ..." name p.DisplayName p.Version p.ProductCode)
-                              let outcome =
-                                  try
-                                      // retry while another MSI installation is in progress (1618)
-                                      let rec attempt n =
-                                          let code = session.Uninstall(p.ProductCode, opts.RemoteLogFolder, logFile)
-                                          if code = 1618 && n < 5 then
-                                              Report.warn (sprintf "[%s] Another installation in progress (MSI1618), retry %d/4 in 30 s..." name n)
-                                              Thread.Sleep(TimeSpan.FromSeconds 30.0)
-                                              attempt (n + 1)
-                                          else
-                                              code
-                                      Ok(attempt 1)
-                                  with ex ->
-                                      Result.Error(ErrorClassifier.classify "MRU405" ex)
-                              match outcome with
+                              let arguments = msiexecArguments "/x" p.ProductCode logFile props
+                              match runMsiexecWithRetry session name arguments opts.RemoteLogFolder with
                               | Ok exitCode ->
                                   let status, msg, errorCode = interpretExitCode exitCode
                                   if isFailure status then
@@ -183,15 +191,120 @@ let private uninstallServer (ctx: ConnectContext) (opts: Options) (msis: string 
                                   logCode name code (sprintf "%s - %s" p.DisplayName detail)
                                   yield row name msi (Some p) ExecutionError None code detail logFile ]
 
+// ------------------------------------------------------------------ install mode
+
+let private installServer (ctx: ConnectContext) (opts: Options) (props: (string * string) list) (packages: Packages.ResolvedPackage list) (computer: string) : OperationResult list =
+    let pkgProduct (pkg: Packages.ResolvedPackage) : InstalledProduct option =
+        pkg.Info
+        |> Option.map (fun i ->
+            { ProductCode = i.ProductCode
+              DisplayName = i.ProductName
+              Version = i.ProductVersion
+              Publisher = i.Manufacturer
+              InstallDate = ""
+              Architecture = "" })
+    let allPackages = packages |> List.map (fun p -> p.FileName) |> fun l -> String.Join("; ", l)
+
+    Report.info (sprintf "[%s] Connecting..." computer)
+    match tryConnect ctx computer with
+    | Result.Error(code, detail) ->
+        logCode computer code detail
+        [ resultRow computer allPackages None ConnectionFailed None code detail "" ]
+    | Ok session ->
+        use session = session
+        let name = session.ComputerName
+        // installed product codes, to skip packages that are already installed
+        let installedCodes =
+            try
+                session.GetInstalledProducts() |> List.map (fun p -> p.ProductCode) |> Set.ofList
+            with ex ->
+                let code, detail = ErrorClassifier.classify "MRU401" ex
+                logCode name code (detail + " - continuing without the already-installed check")
+                Set.empty
+        [ for pkg in packages do
+              let product = pkgProduct pkg
+              let code = pkg.Info |> Option.map (fun i -> i.ProductCode) |> Option.defaultValue ""
+              if code <> "" && installedCodes.Contains code then
+                  Report.log None (sprintf "[%s] %s is already installed (%s) - skipped." name pkg.FileName code)
+                  yield resultRow name pkg.FileName product AlreadyInstalled None "" "Already installed - skipped." ""
+              elif opts.WhatIf then
+                  Report.log None (sprintf "[%s] WhatIf: would install %s" name pkg.FileName)
+                  yield resultRow name pkg.FileName product WouldInstall None "" "WhatIf: not installed." ""
+              else
+                  // 1. stage the package on the server (copy mode)
+                  let staged =
+                      if pkg.Copy then
+                          let remotePath = sprintf @"%s\%s" opts.RemoteStagingFolder pkg.FileName
+                          Report.log None (sprintf "[%s] Copying %s to %s ..." name pkg.FileName remotePath)
+                          try
+                              session.UploadFile(pkg.Path, remotePath)
+                              Ok remotePath
+                          with ex ->
+                              Result.Error(ErrorClassifier.classify "MRU406" ex)
+                      else
+                          Ok pkg.Path
+                  match staged with
+                  | Result.Error(errCode, detail) ->
+                      logCode name errCode (sprintf "%s - %s" pkg.FileName detail)
+                      yield resultRow name pkg.FileName product ExecutionError None errCode detail ""
+                  | Ok target ->
+                      // 2. install
+                      let logFile = logFileName opts.RemoteLogFolder ("install_" + Path.GetFileNameWithoutExtension pkg.FileName)
+                      Report.log None (sprintf "[%s] Installing %s ..." name pkg.FileName)
+                      let arguments = msiexecArguments "/i" target logFile props
+                      let outcome = runMsiexecWithRetry session name arguments opts.RemoteLogFolder
+                      // 3. remove the staged copy
+                      if pkg.Copy && not opts.KeepStaged then
+                          try
+                              session.DeleteFile target
+                          with ex ->
+                              let c, d = ErrorClassifier.classify "MRU407" ex
+                              logCode name c d
+                      match outcome with
+                      | Ok exitCode ->
+                          let status, msg, errorCode = interpretInstallExitCode exitCode
+                          if isFailure status then
+                              logCode name errorCode (sprintf "%s - %s" pkg.FileName msg)
+                          else
+                              Report.ok (sprintf "[%s] %s: %s" name pkg.FileName msg)
+                          yield resultRow name pkg.FileName product status (Some exitCode) errorCode msg logFile
+                      | Result.Error(errCode, detail) ->
+                          logCode name errCode (sprintf "%s - %s" pkg.FileName detail)
+                          yield resultRow name pkg.FileName product ExecutionError None errCode detail logFile ]
+
 // ------------------------------------------------------------------ main
+
+let private exitCodeFor (servers: string list) (results: OperationResult list) =
+    let connectionFailures =
+        results |> List.filter (fun r -> r.Status = ConnectionFailed) |> List.map (fun r -> r.ComputerName) |> List.distinct
+    if connectionFailures.Length = servers.Length then ExitNoServerReachable
+    elif results |> List.exists (fun r -> isFailure r.Status) then ExitPartialFailure
+    elif results |> List.exists (fun r -> r.Status = SuccessRebootRequired || r.Status = SuccessRebootInitiated) then ExitOkRebootRequired
+    else ExitOk
+
+let private confirm (opts: Options) (question: string) =
+    if opts.WhatIf then
+        Report.warn "WhatIf mode: nothing will be changed on the servers."
+    elif not opts.Yes then
+        Console.Write(question + " [y/N] ")
+        let answer = Console.ReadLine()
+        let yes = not (isNull answer) && (let a = answer.Trim().ToLowerInvariant() in a = "y" || a = "yes")
+        if not yes then raiseMru "MRU502" "Nothing was changed."
 
 let private run (opts: Options) : int =
     let servers = mergeList opts.Computers opts.ComputerListFiles
     let msis = mergeList opts.Msis opts.MsiListFiles
+    let installEntries = mergeList opts.InstallPackages opts.InstallListFiles
+    let installMode = not (List.isEmpty installEntries)
+
+    // exactly one operation per run
+    let modes = [ not (List.isEmpty msis); opts.ListInstalled; installMode ] |> List.filter id
+    if modes.Length > 1 then
+        raiseMru "MRU109" "Use only one of --msi/--msi-list, --list, --install/--install-list."
     if List.isEmpty servers then
         raiseMru "MRU102" "Use --computer and/or --computer-list."
-    if List.isEmpty msis && not opts.ListInstalled then
-        raiseMru "MRU103" "Use --msi and/or --msi-list, or --list to list installed MSIs."
+    if modes.IsEmpty then
+        raiseMru "MRU103" "Use --msi and/or --msi-list, --list to list installed MSIs, or --install to install packages."
 
     // Option combinations that have no effect
     if not (List.isEmpty opts.Filters) && not opts.ListInstalled then
@@ -202,6 +315,13 @@ let private run (opts: Options) : int =
         Report.warnCode "MRU108" "--skip-cert-check has no effect without --ssl."
     if opts.CurrentUser && (opts.UserName.IsSome || opts.PasswordEnvVar.IsSome) then
         Report.warnCode "MRU108" "--current-user given; --user / --password-env are ignored."
+    if not installMode && (opts.PackageSource.IsSome || opts.SourceMode <> Packages.SourceMode.Copy || opts.KeepStaged) then
+        Report.warnCode "MRU108" "--package-source / --source-mode / --keep-staged are only used with --install."
+    if opts.ListInstalled && not (List.isEmpty opts.MsiProperties) then
+        Report.warnCode "MRU108" "--msi-property is not used with --list."
+
+    // msiexec properties (strict = command line passes through cmd.exe with WMI)
+    let props = opts.MsiProperties |> List.map (parseMsiProperty (opts.Transport = Transport.Wmi))
 
     // Validate search and name patterns before contacting anything
     let matchers =
@@ -216,22 +336,43 @@ let private run (opts: Options) : int =
                     raiseMru "MRU106" (sprintf "%A filter '%s': %s" opts.FilterMode f ex.Message))
         else
             []
-    if not opts.ListInstalled then
-        for m in msis do
-            if not (isProductCode m) then
-                try
-                    createMatcher FilterMode.Wildcard m |> ignore
-                with ex ->
-                    raiseMru "MRU107" (sprintf "'%s': %s" m ex.Message)
+    for m in msis do
+        if not (isProductCode m) then
+            try
+                createMatcher FilterMode.Wildcard m |> ignore
+            with ex ->
+                raiseMru "MRU107" (sprintf "'%s': %s" m ex.Message)
 
     if not (OperatingSystem.IsWindows()) then
         Report.warnCode "MRU503" "Not running on Windows - connections are expected to fail."
+
+    // Resolve install packages before asking for credentials (fails fast on typos)
+    let packages =
+        if installMode then
+            let sourceMode =
+                if opts.SourceMode = Packages.SourceMode.Direct && opts.PackageSource |> Option.exists Packages.isUrl then
+                    Report.warnCode "MRU108" "--source-mode direct cannot be used with a URL source; packages are downloaded and copied."
+                    Packages.SourceMode.Copy
+                else
+                    opts.SourceMode
+            let downloadDir = Path.Combine(Path.GetTempPath(), "MsiRemoteUninstall", Guid.NewGuid().ToString("N"))
+            let resolved = Packages.resolve opts.PackageSource sourceMode downloadDir installEntries
+            for p in resolved do
+                match p.InfoError with
+                | Some e when p.Copy || Packages.isUnc p.Path -> Report.warnCode "MRU504" (sprintf "%s: %s" p.FileName e)
+                | _ -> ()
+            resolved
+        else
+            []
 
     let reportPath =
         match opts.ReportPath with
         | Some p -> p
         | None ->
-            let prefix = if opts.ListInstalled then "MsiInventory" else "MsiUninstallReport"
+            let prefix =
+                if opts.ListInstalled then "MsiInventory"
+                elif installMode then "MsiInstallReport"
+                else "MsiUninstallReport"
             Path.Combine(Environment.CurrentDirectory, sprintf "%s_%s.csv" prefix (DateTime.Now.ToString "yyyyMMdd_HHmmss"))
 
     Console.WriteLine()
@@ -240,8 +381,18 @@ let private run (opts: Options) : int =
     if opts.ListInstalled then
         if List.isEmpty matchers then Report.info "Filter        : none (listing all MSI products)"
         else Report.info (sprintf "Filter (%A, any of): %s" opts.FilterMode (String.Join(", ", opts.Filters)))
+    elif installMode then
+        Report.info (sprintf "Packages (%d)  :" packages.Length)
+        for p in packages do
+            let details =
+                match p.Info with
+                | Some i -> sprintf "%s %s %s" i.ProductName i.ProductVersion i.ProductCode
+                | None -> ""
+            Report.info (sprintf "  %s  %s%s" p.Path details (if p.Copy then "" else "  (opened by the server)"))
     else
         Report.info (sprintf "MSIs (%d)      : %s" msis.Length (String.Join(", ", msis)))
+    if not (List.isEmpty props) then
+        Report.info (sprintf "MSI properties: %s" (formatMsiProperties props))
     Console.WriteLine()
 
     let credential = Credentials.obtain opts.UserName opts.PasswordEnvVar opts.CurrentUser
@@ -269,27 +420,16 @@ let private run (opts: Options) : int =
         if failedServers = 0 then ExitOk
         elif failedServers = servers.Length then ExitNoServerReachable
         else ExitPartialFailure
+    elif installMode then
+        confirm opts (sprintf "Install %d package(s) on %d server(s)?" packages.Length servers.Length)
+        let results = servers |> runParallel opts.Throttle (installServer ctx opts props packages) |> List.concat
+        Report.showOperationResults results reportPath |> ignore
+        exitCodeFor servers results
     else
-        let proceed =
-            if opts.WhatIf then
-                Report.warn "WhatIf mode: products will be discovered but NOT uninstalled."
-                true
-            elif opts.Yes then
-                true
-            else
-                Console.Write(sprintf "Uninstall %d MSI(s) on %d server(s)? [y/N] " msis.Length servers.Length)
-                let answer = Console.ReadLine()
-                not (isNull answer) && (let a = answer.Trim().ToLowerInvariant() in a = "y" || a = "yes")
-        if not proceed then
-            raiseMru "MRU502" "Nothing was uninstalled."
-        let results = servers |> runParallel opts.Throttle (uninstallServer ctx opts msis) |> List.concat
-        Report.showUninstallResults results reportPath |> ignore
-        let connectionFailures =
-            results |> List.filter (fun r -> r.Status = ConnectionFailed) |> List.map (fun r -> r.ComputerName) |> List.distinct
-        if connectionFailures.Length = servers.Length then ExitNoServerReachable
-        elif results |> List.exists (fun r -> isFailure r.Status) then ExitPartialFailure
-        elif results |> List.exists (fun r -> r.Status = SuccessRebootRequired || r.Status = SuccessRebootInitiated) then ExitOkRebootRequired
-        else ExitOk
+        confirm opts (sprintf "Uninstall %d MSI(s) on %d server(s)?" msis.Length servers.Length)
+        let results = servers |> runParallel opts.Throttle (uninstallServer ctx opts props msis) |> List.concat
+        Report.showOperationResults results reportPath |> ignore
+        exitCodeFor servers results
 
 let private showErrors (format: string) =
     match format with

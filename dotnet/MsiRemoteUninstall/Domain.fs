@@ -23,25 +23,27 @@ type InstalledProduct =
       InstallDate: string
       Architecture: string }
 
-type UninstallStatus =
+type OperationStatus =
     | Success
     | SuccessRebootRequired
     | SuccessRebootInitiated
     | NotInstalled
     | NotFound
     | WouldUninstall
+    | WouldInstall
+    | AlreadyInstalled
     | Failed
     | ExecutionError
     | ConnectionFailed
 
-/// One row of the uninstall report.
-type UninstallResult =
+/// One row of the uninstall / install report.
+type OperationResult =
     { ComputerName: string
       Msi: string
       DisplayName: string
       Version: string
       ProductCode: string
-      Status: UninstallStatus
+      Status: OperationStatus
       ExitCode: int option
       ErrorCode: string
       Message: string
@@ -148,7 +150,7 @@ let findProducts (installed: InstalledProduct list) (msi: string) : InstalledPro
 // ---------------------------------------------------------------- msiexec exit codes
 
 /// Maps an msiexec exit code to status, message and error-catalog code ("" for plain success).
-let interpretExitCode (code: int) : UninstallStatus * string * string =
+let interpretExitCode (code: int) : OperationStatus * string * string =
     let describe () = (Errors.get (Errors.msiCode code)).Title
     match code with
     | 0 -> Success, "Uninstalled successfully.", ""
@@ -156,6 +158,43 @@ let interpretExitCode (code: int) : UninstallStatus * string * string =
     | 1641 -> SuccessRebootInitiated, "Uninstalled; reboot initiated.", "MSI1641"
     | 1605 -> NotInstalled, "Product is not installed.", "MSI1605"
     | c -> Failed, sprintf "msiexec exit code %d: %s." c (describe ()), Errors.msiCode c
+
+/// Maps an msiexec exit code of an INSTALL to status, message and error-catalog code.
+let interpretInstallExitCode (code: int) : OperationStatus * string * string =
+    match code with
+    | 0 -> Success, "Installed successfully.", ""
+    | 3010 -> SuccessRebootRequired, "Installed; reboot required.", "MSI3010"
+    | 1641 -> SuccessRebootInitiated, "Installed; reboot initiated.", "MSI1641"
+    | c -> Failed, sprintf "msiexec exit code %d: %s." c (Errors.get (Errors.msiCode c)).Title, Errors.msiCode c
+
+// ---------------------------------------------------------------- msiexec properties
+
+/// Parses "NAME=VALUE". Raises MRU112 when invalid. `strict` additionally rejects ! and %
+/// (needed when the command line goes through cmd.exe, i.e. the WMI transport).
+let parseMsiProperty (strict: bool) (text: string) : string * string =
+    let i = if isNull text then -1 else text.IndexOf '='
+    if i <= 0 then
+        raiseMru "MRU112" (sprintf "'%s' is not in the form NAME=VALUE." text)
+    let name = text.Substring(0, i).Trim()
+    let value = text.Substring(i + 1)
+    if not (Regex.IsMatch(name, @"^[A-Za-z_][A-Za-z0-9_.]*$")) then
+        raiseMru "MRU112" (sprintf "'%s' is not a valid property name." name)
+    if value.Contains "\"" then
+        raiseMru "MRU112" (sprintf "The value of %s contains a double quote." name)
+    if strict && (value.Contains "!" || value.Contains "%") then
+        raiseMru "MRU112" (sprintf "The value of %s contains ! or %%, which cannot be passed through the WMI transport." name)
+    name, value
+
+/// Formats properties for the msiexec command line: NAME="value" ...
+let formatMsiProperties (props: (string * string) list) : string =
+    props |> List.map (fun (n, v) -> sprintf "%s=\"%s\"" n v) |> String.concat " "
+
+/// Builds the full msiexec argument string.
+let msiexecArguments (action: string) (target: string) (logFile: string) (props: (string * string) list) =
+    let baseArgs = sprintf "%s \"%s\" /qn /norestart /l*v \"%s\"" action target logFile
+    match props with
+    | [] -> baseArgs
+    | _ -> baseArgs + " " + formatMsiProperties props
 
 let isFailure status =
     match status with

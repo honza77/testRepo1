@@ -31,7 +31,7 @@ MsiRemoteUninstall --errors                  # list all codes
 
 | Code | Severity | Title | Applies to |
 |---|---|---|---|
-| [MRU101](#mru101) | Error | Invalid command-line argument | .NET app |
+| [MRU101](#mru101) | Error | Invalid command-line argument | .NET apps |
 | [MRU102](#mru102) | Error | No servers specified | All |
 | [MRU103](#mru103) | Error | No MSIs specified | All |
 | [MRU104](#mru104) | Error | List file not found | All |
@@ -39,9 +39,13 @@ MsiRemoteUninstall --errors                  # list all codes
 | [MRU106](#mru106) | Error | Invalid search filter pattern | All |
 | [MRU107](#mru107) | Error | Invalid MSI name pattern | All |
 | [MRU108](#mru108) | Warning | Option ignored | All |
+| [MRU109](#mru109) | Error | Conflicting operation modes | .NET apps |
+| [MRU110](#mru110) | Error | Package not found | .NET apps |
+| [MRU111](#mru111) | Error | Package source not accessible | .NET apps |
+| [MRU112](#mru112) | Error | Invalid MSI property | .NET apps |
 | [MRU201](#mru201) | Error | No user name entered / credential prompt cancelled | All |
 | [MRU202](#mru202) | Error | No password entered | All |
-| [MRU203](#mru203) | Error | Password environment variable missing | .NET app |
+| [MRU203](#mru203) | Error | Password environment variable missing | .NET apps |
 | [MRU204](#mru204) | Error | Cannot prompt for credentials | All |
 | [MRU301](#mru301) | Error | Server name cannot be resolved | All |
 | [MRU302](#mru302) | Error | Server unreachable or management port closed | All |
@@ -59,9 +63,12 @@ MsiRemoteUninstall --errors                  # list all codes
 | [MRU403](#mru403) | Error | msiexec did not finish in time | All |
 | [MRU404](#mru404) | Error | msiexec result could not be determined | All |
 | [MRU405](#mru405) | Error | Remote command failed | All |
+| [MRU406](#mru406) | Error | Package could not be copied to the server | .NET apps |
+| [MRU407](#mru407) | Warning | Staged package could not be removed | .NET apps |
 | [MRU501](#mru501) | Warning | Report could not be written | All |
 | [MRU502](#mru502) | Info | Aborted by user | All |
-| [MRU503](#mru503) | Error | Remote management not available on this OS | .NET app |
+| [MRU504](#mru504) | Warning | Package details could not be read | .NET apps |
+| [MRU503](#mru503) | Error | Remote management not available on this OS | .NET apps |
 | [MSI1601](#msi1601) | Error | Windows Installer service not accessible | All |
 | [MSI1602](#msi1602) | Error | Uninstall cancelled | All |
 | [MSI1603](#msi1603) | Error | Fatal error during uninstall | All |
@@ -74,6 +81,7 @@ MsiRemoteUninstall --errors                  # list all codes
 | [MSI1624](#msi1624) | Error | Error applying transforms | All |
 | [MSI1625](#msi1625) | Error | Prohibited by system policy | All |
 | [MSI1633](#msi1633) | Error | Platform not supported | All |
+| [MSI1638](#msi1638) | Error | Another version is already installed | All |
 | [MSI1639](#msi1639) | Error | Invalid command line argument | All |
 | [MSI1641](#msi1641) | Warning | Uninstalled - reboot initiated | All |
 | [MSI3010](#msi3010) | Warning | Uninstalled - reboot required | All |
@@ -84,7 +92,7 @@ MsiRemoteUninstall --errors                  # list all codes
 
 ### MRU101
 
-**Invalid command-line argument** - severity: Error, applies to: .NET app
+**Invalid command-line argument** - severity: Error, applies to: .NET apps
 
 An argument was not recognised, is missing its value, or its value is outside the allowed range. (In the PowerShell script, PowerShell itself validates parameters before the script starts.)
 
@@ -173,6 +181,55 @@ How to fix it:
 
 1. Remove the option, or add the option it depends on (see the warning text).
 
+### MRU109
+
+**Conflicting operation modes** - severity: Error, applies to: .NET apps
+
+More than one operation was requested at the same time. A run either uninstalls (--msi), lists (--list) or installs (--install).
+
+How to fix it:
+
+1. Use only one of --msi / --msi-list, --list, or --install / --install-list per run.
+2. To test a full cycle, run the tool twice: first with --install, then with --msi.
+
+### MRU110
+
+**Package not found** - severity: Error, applies to: .NET apps
+
+An MSI package given with --install / --install-list does not exist in the package source (folder, share or URL), or a wildcard matched no file.
+
+How to fix it:
+
+1. Check the file name; the .msi extension is added automatically if missing.
+2. Check --package-source: relative names are looked up there (default: the current directory).
+3. List the folder to see what is available, e.g. dir \\fileserver\packages\*.msi.
+4. For a URL source, open the full URL in a browser to verify it exists.
+
+### MRU111
+
+**Package source not accessible** - severity: Error, applies to: .NET apps
+
+The package source folder, share or web server could not be accessed, or a download failed.
+
+How to fix it:
+
+1. Check the path / URL in --package-source for typos.
+2. For a share: check that your account can open it in Explorer (\\server\share) and that the server is reachable.
+3. For a URL: check proxy settings, TLS and that the web server returns the file (HTTP 200).
+4. Copy the packages to a local folder and use that as --package-source.
+
+### MRU112
+
+**Invalid MSI property** - severity: Error, applies to: .NET apps
+
+A --msi-property value is not in the form NAME=VALUE, or the value contains characters that cannot be passed safely to msiexec (a double quote; with the WMI transport also ! and %).
+
+How to fix it:
+
+1. Use the form NAME=VALUE, e.g. --msi-property INSTALLFOLDER=D:\Apps\Hello. Public property names are UPPERCASE.
+2. Quote the whole argument if the value contains spaces: --msi-property "COMPANY=Contoso Ltd".
+3. Avoid double quotes in values; with -t wmi also avoid ! and %, or use the psremoting transport.
+
 ## Credentials
 
 ### MRU201
@@ -200,7 +257,7 @@ How to fix it:
 
 ### MRU203
 
-**Password environment variable missing** - severity: Error, applies to: .NET app
+**Password environment variable missing** - severity: Error, applies to: .NET apps
 
 --password-env was given, but that environment variable does not exist or is empty in this process.
 
@@ -436,6 +493,30 @@ How to fix it:
 3. Check the server's event logs (Application, System, Microsoft-Windows-WinRM/Operational).
 4. If the session broke, check whether the server rebooted (some uninstalls force a reboot).
 
+### MRU406
+
+**Package could not be copied to the server** - severity: Error, applies to: .NET apps
+
+The MSI package could not be transferred to the staging folder on the server. PowerShell Remoting copies the file through the WinRM session; the WMI transport copies it through the administrative share (\\server\C$).
+
+How to fix it:
+
+1. Check free disk space on the server and that the staging folder (--remote-staging-folder) is a valid local path there.
+2. WMI transport: the admin share must be reachable - TCP port 445 open, 'File and Printer Sharing' enabled, admin shares not disabled (AutoShareServer), and the account must be a local administrator.
+3. WMI transport, Windows error 1219: you already have a connection to that server with other credentials (e.g. a mapped drive) - disconnect it (net use \\server\C$ /delete) or use the same account.
+4. Alternatively let the server read the package itself: --source-mode direct with a UNC path (see MSI1619 for the double-hop limitation).
+
+### MRU407
+
+**Staged package could not be removed** - severity: Warning, applies to: .NET apps
+
+After installing, the copied MSI could not be deleted from the staging folder on the server. The installation itself is not affected (Windows Installer keeps its own cached copy).
+
+How to fix it:
+
+1. Delete the file manually from the staging folder on the server (path in the message).
+2. Use --keep-staged if you want to keep the copies on purpose.
+
 ## Local
 
 ### MRU501
@@ -461,9 +542,20 @@ How to fix it:
 1. Run again and confirm with 'y', or skip the question with -y / --yes (.NET) or -Confirm:$false (PowerShell).
 2. Use --what-if / -WhatIf first to see what would be removed.
 
+### MRU504
+
+**Package details could not be read** - severity: Warning, applies to: .NET apps
+
+The ProductName / ProductCode / version of a package could not be read before installing (msi.dll is only available on Windows, or the file is not a valid MSI). The package is still installed, but the tool cannot detect whether it is already installed.
+
+How to fix it:
+
+1. Run the tool on Windows.
+2. Check that the file is a valid, complete MSI (open it with Orca or compare its size with the original).
+
 ### MRU503
 
-**Remote management not available on this OS** - severity: Error, applies to: .NET app
+**Remote management not available on this OS** - severity: Error, applies to: .NET apps
 
 The WinRM client and WMI/DCOM APIs used by the tool exist only on Windows. This happens when the .NET tool is started on Linux or macOS.
 
@@ -501,7 +593,7 @@ How to fix it:
 
 **Fatal error during uninstall** - severity: Error, applies to: All
 
-A generic failure inside the uninstall. The most common causes: a custom action of the product failed, files or services are in use, a pending reboot, or missing permissions inside the product's own uninstall logic.
+A generic failure inside the install or uninstall (for installs also: a newer version is already installed and downgrades are blocked). The most common causes: a custom action of the product failed, files or services are in use, a pending reboot, or missing permissions inside the product's own uninstall logic.
 
 How to fix it:
 
@@ -548,12 +640,13 @@ How to fix it:
 
 **Installation package could not be opened** - severity: Error, applies to: All
 
-The cached MSI package of the product could not be opened - it is missing, inaccessible or corrupt.
+The MSI package could not be opened - it is missing, inaccessible or corrupt. When installing with --source-mode direct from a share, this usually means the server cannot read the share: remote sessions cannot pass your credentials on to a third machine (the 'double hop' problem).
 
 How to fix it:
 
-1. Same as MSI1612: restore the original .msi of the same version, or uninstall using the package path.
-2. Check antivirus quarantine for C:\Windows\Installer\*.msi files.
+1. Installing with --source-mode direct: use --source-mode copy (default) instead, or grant the server's computer account (DOMAIN\SERVER$) read access to the share.
+2. Uninstalling: same as MSI1612 - restore the original .msi of the same version, or uninstall using the package path.
+3. Check antivirus quarantine for C:\Windows\Installer\*.msi files.
 
 ### MSI1620
 
@@ -609,6 +702,17 @@ How to fix it:
 
 1. Check the msiexec log; this is unusual for an uninstall and may indicate a corrupt product registration.
 2. Use the vendor's cleanup tool.
+
+### MSI1638
+
+**Another version is already installed** - severity: Error, applies to: All
+
+Installing failed because another version of this product (same UpgradeCode, without an upgrade rule allowing it) is already installed.
+
+How to fix it:
+
+1. Uninstall the other version first (list it with --list to get its product code).
+2. Use a package version that is built as a major upgrade of the installed one.
 
 ### MSI1639
 

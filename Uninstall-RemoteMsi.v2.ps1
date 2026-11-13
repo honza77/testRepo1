@@ -157,7 +157,7 @@ $script:ErrorCatalogJson = @'
 {
   "ErrorCodes": [
     {
-      "AppliesTo": ".NET app",
+      "AppliesTo": ".NET apps",
       "Category": "Input",
       "Code": "MRU101",
       "Explanation": "An argument was not recognised, is missing its value, or its value is outside the allowed range. (In the PowerShell script, PowerShell itself validates parameters before the script starts.)",
@@ -256,6 +256,59 @@ $script:ErrorCatalogJson = @'
       "Title": "Option ignored"
     },
     {
+      "AppliesTo": ".NET apps",
+      "Category": "Input",
+      "Code": "MRU109",
+      "Explanation": "More than one operation was requested at the same time. A run either uninstalls (--msi), lists (--list) or installs (--install).",
+      "Remediation": [
+        "Use only one of --msi / --msi-list, --list, or --install / --install-list per run.",
+        "To test a full cycle, run the tool twice: first with --install, then with --msi."
+      ],
+      "Severity": "Error",
+      "Title": "Conflicting operation modes"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Input",
+      "Code": "MRU110",
+      "Explanation": "An MSI package given with --install / --install-list does not exist in the package source (folder, share or URL), or a wildcard matched no file.",
+      "Remediation": [
+        "Check the file name; the .msi extension is added automatically if missing.",
+        "Check --package-source: relative names are looked up there (default: the current directory).",
+        "List the folder to see what is available, e.g. dir \\\\fileserver\\packages\\*.msi.",
+        "For a URL source, open the full URL in a browser to verify it exists."
+      ],
+      "Severity": "Error",
+      "Title": "Package not found"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Input",
+      "Code": "MRU111",
+      "Explanation": "The package source folder, share or web server could not be accessed, or a download failed.",
+      "Remediation": [
+        "Check the path / URL in --package-source for typos.",
+        "For a share: check that your account can open it in Explorer (\\\\server\\share) and that the server is reachable.",
+        "For a URL: check proxy settings, TLS and that the web server returns the file (HTTP 200).",
+        "Copy the packages to a local folder and use that as --package-source."
+      ],
+      "Severity": "Error",
+      "Title": "Package source not accessible"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Input",
+      "Code": "MRU112",
+      "Explanation": "A --msi-property value is not in the form NAME=VALUE, or the value contains characters that cannot be passed safely to msiexec (a double quote; with the WMI transport also ! and %).",
+      "Remediation": [
+        "Use the form NAME=VALUE, e.g. --msi-property INSTALLFOLDER=D:\\Apps\\Hello. Public property names are UPPERCASE.",
+        "Quote the whole argument if the value contains spaces: --msi-property \"COMPANY=Contoso Ltd\".",
+        "Avoid double quotes in values; with -t wmi also avoid ! and %, or use the psremoting transport."
+      ],
+      "Severity": "Error",
+      "Title": "Invalid MSI property"
+    },
+    {
       "AppliesTo": "All",
       "Category": "Credentials",
       "Code": "MRU201",
@@ -281,7 +334,7 @@ $script:ErrorCatalogJson = @'
       "Title": "No password entered"
     },
     {
-      "AppliesTo": ".NET app",
+      "AppliesTo": ".NET apps",
       "Category": "Credentials",
       "Code": "MRU203",
       "Explanation": "--password-env was given, but that environment variable does not exist or is empty in this process.",
@@ -533,6 +586,32 @@ $script:ErrorCatalogJson = @'
       "Title": "Remote command failed"
     },
     {
+      "AppliesTo": ".NET apps",
+      "Category": "Remote operation",
+      "Code": "MRU406",
+      "Explanation": "The MSI package could not be transferred to the staging folder on the server. PowerShell Remoting copies the file through the WinRM session; the WMI transport copies it through the administrative share (\\\\server\\C$).",
+      "Remediation": [
+        "Check free disk space on the server and that the staging folder (--remote-staging-folder) is a valid local path there.",
+        "WMI transport: the admin share must be reachable - TCP port 445 open, 'File and Printer Sharing' enabled, admin shares not disabled (AutoShareServer), and the account must be a local administrator.",
+        "WMI transport, Windows error 1219: you already have a connection to that server with other credentials (e.g. a mapped drive) - disconnect it (net use \\\\server\\C$ /delete) or use the same account.",
+        "Alternatively let the server read the package itself: --source-mode direct with a UNC path (see MSI1619 for the double-hop limitation)."
+      ],
+      "Severity": "Error",
+      "Title": "Package could not be copied to the server"
+    },
+    {
+      "AppliesTo": ".NET apps",
+      "Category": "Remote operation",
+      "Code": "MRU407",
+      "Explanation": "After installing, the copied MSI could not be deleted from the staging folder on the server. The installation itself is not affected (Windows Installer keeps its own cached copy).",
+      "Remediation": [
+        "Delete the file manually from the staging folder on the server (path in the message).",
+        "Use --keep-staged if you want to keep the copies on purpose."
+      ],
+      "Severity": "Warning",
+      "Title": "Staged package could not be removed"
+    },
+    {
       "AppliesTo": "All",
       "Category": "Local",
       "Code": "MRU501",
@@ -558,7 +637,19 @@ $script:ErrorCatalogJson = @'
       "Title": "Aborted by user"
     },
     {
-      "AppliesTo": ".NET app",
+      "AppliesTo": ".NET apps",
+      "Category": "Local",
+      "Code": "MRU504",
+      "Explanation": "The ProductName / ProductCode / version of a package could not be read before installing (msi.dll is only available on Windows, or the file is not a valid MSI). The package is still installed, but the tool cannot detect whether it is already installed.",
+      "Remediation": [
+        "Run the tool on Windows.",
+        "Check that the file is a valid, complete MSI (open it with Orca or compare its size with the original)."
+      ],
+      "Severity": "Warning",
+      "Title": "Package details could not be read"
+    },
+    {
+      "AppliesTo": ".NET apps",
       "Category": "Local",
       "Code": "MRU503",
       "Explanation": "The WinRM client and WMI/DCOM APIs used by the tool exist only on Windows. This happens when the .NET tool is started on Linux or macOS.",
@@ -598,7 +689,7 @@ $script:ErrorCatalogJson = @'
       "AppliesTo": "All",
       "Category": "msiexec exit code",
       "Code": "MSI1603",
-      "Explanation": "A generic failure inside the uninstall. The most common causes: a custom action of the product failed, files or services are in use, a pending reboot, or missing permissions inside the product's own uninstall logic.",
+      "Explanation": "A generic failure inside the install or uninstall (for installs also: a newer version is already installed and downgrades are blocked). The most common causes: a custom action of the product failed, files or services are in use, a pending reboot, or missing permissions inside the product's own uninstall logic.",
       "Remediation": [
         "Open the verbose msiexec log (path in the report) and search for 'Return value 3' - the lines just above it name the failing action.",
         "Stop the product's processes and services, then retry.",
@@ -649,9 +740,10 @@ $script:ErrorCatalogJson = @'
       "AppliesTo": "All",
       "Category": "msiexec exit code",
       "Code": "MSI1619",
-      "Explanation": "The cached MSI package of the product could not be opened - it is missing, inaccessible or corrupt.",
+      "Explanation": "The MSI package could not be opened - it is missing, inaccessible or corrupt. When installing with --source-mode direct from a share, this usually means the server cannot read the share: remote sessions cannot pass your credentials on to a third machine (the 'double hop' problem).",
       "Remediation": [
-        "Same as MSI1612: restore the original .msi of the same version, or uninstall using the package path.",
+        "Installing with --source-mode direct: use --source-mode copy (default) instead, or grant the server's computer account (DOMAIN\\SERVER$) read access to the share.",
+        "Uninstalling: same as MSI1612 - restore the original .msi of the same version, or uninstall using the package path.",
         "Check antivirus quarantine for C:\\Windows\\Installer\\*.msi files."
       ],
       "Severity": "Error",
@@ -716,6 +808,18 @@ $script:ErrorCatalogJson = @'
       ],
       "Severity": "Error",
       "Title": "Platform not supported"
+    },
+    {
+      "AppliesTo": "All",
+      "Category": "msiexec exit code",
+      "Code": "MSI1638",
+      "Explanation": "Installing failed because another version of this product (same UpgradeCode, without an upgrade rule allowing it) is already installed.",
+      "Remediation": [
+        "Uninstall the other version first (list it with --list to get its product code).",
+        "Use a package version that is built as a major upgrade of the installed one."
+      ],
+      "Severity": "Error",
+      "Title": "Another version is already installed"
     },
     {
       "AppliesTo": "All",
