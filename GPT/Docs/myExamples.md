@@ -76,3 +76,7 @@ $p = Start-Process msiexec.exe `
     ```powershell
     Get-ChildItem "C:\Program Files\HelloWorld"
     ```
+
+## uninstall
+
+msiexec.exe /x "{956ECF1E-28A1-44A8-8D14-53E62E218742}" /qn /norestart
