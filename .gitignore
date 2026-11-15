@@ -7,3 +7,4 @@ MsiInventory_*.csv
 MsiUninstallReport_*.csv
 MsiInstallReport_*.csv
 artifacts/
+GPT/install.log

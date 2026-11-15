@@ -8,8 +8,20 @@ param(
     [PSCredential]$Credential
 )
 
+
+
 $ErrorActionPreference = "Stop"
-if (-not $Credential) { $Credential = Get-Credential }
+if (-not $Credential) {
+        # $Credential = Get-Credential 
+
+        $Username = Read-Host "Enter username"
+        $Password = Read-Host "Enter password" -AsSecureString
+
+        $Credential = New-Object System.Management.Automation.PSCredential(
+            $Username,
+            $Password
+        )     
+    }
 
 foreach ($guid in $MsiGuids) {
     if ($guid -notmatch '^\{?[0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}\}?$') {

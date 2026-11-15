@@ -13,7 +13,17 @@ From the toolkit folder:
     -Version "1.0.0"
 ```
 
-The MSI is created in the toolkit's `output` folder.
+or Wix5 if licence error
+
+```powershell
+.\Scripts\Build-Msi-Wix5.ps1 `
+    -ProjectPath "C:\git\testRepo1\dotnet\ConsoleApp1\ConsoleApp1\ConsoleApp1.fsproj" `
+    -ProductName "HelloWorld" `
+    -Manufacturer "MyCompany" `
+    -Version "1.0.0"
+```    
+
+The MSI is created in the toolkit's `output` folder. Wix5 does in project artifacts folder
 
 ## 2. Install locally
 
