@@ -1,5 +1,10 @@
-﻿$Servers = @("SERVER01", "SERVER02", "SERVER03")
-$MsiGuids = @("{GUID1}", "{GUID2}")
+﻿$Servers = 
+    #@("SERVER01", "SERVER02", "SERVER03")
+    @("localhost")
+
+$MsiGuids =
+    #  @("{GUID1}", "{GUID2}")
+     @("956ECF1E-28A1-44A8-8D14-53E62E218742")
 
 #$Credential = Get-Credential
 $Username = Read-Host "Enter username"
@@ -9,6 +14,11 @@ $Credential = New-Object System.Management.Automation.PSCredential(
     $Username,
     $Password
 )
+
+Write-Host ""
+# Write-Host "MSI uninstalling " -ForegroundColor Cyan
+Write-Host "MSI uninstalling for " + $Username
+Write-Host ""
 
 
 Invoke-Command -ComputerName $Servers -Credential $Credential -ScriptBlock {

@@ -1,5 +1,10 @@
 
+## prerequisities
+
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+
+## build
 
 ```powershell
 .\Scripts\Build-Msi.ps1 `
@@ -16,22 +21,12 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
     -Version "1.0.0"
 ```    
 
+## install
+
 >msiexec.exe /i "..\dotnet\ConsoleApp1\ConsoleApp1\artifacts\HelloWorld-1.0.0.msi" /qn /norestart
 
 // with log
 >msiexec.exe /i "..\dotnet\ConsoleApp1\ConsoleApp1\artifacts\HelloWorld-1.0.0.msi" /qn /norestart /l*v ".\install.log"
-
-
-```powershell
-Get-ItemProperty `
-    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*", `
-    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" |
-Where-Object {
-    $_.WindowsInstaller -eq 1 -and
-    $_.DisplayName -like "*HelloWorld*"
-} |
-Select-Object DisplayName, DisplayVersion, PSChildName
-```
 
 
 
@@ -48,7 +43,9 @@ $p = Start-Process msiexec.exe `
 ```
 
 
-## check
+
+
+## list
 
 * with GUID
     ```powershell
@@ -61,6 +58,7 @@ $p = Start-Process msiexec.exe `
     } |
     Select-Object DisplayName, DisplayVersion, PSChildName
     ```
+
 
 * somwwhat simplier    
     ```powershell
@@ -75,7 +73,10 @@ $p = Start-Process msiexec.exe `
 * lists dlls
     ```powershell
     Get-ChildItem "C:\Program Files\HelloWorld"
-    ```
+    ```    
+
+
+
 
 ## uninstall
 
